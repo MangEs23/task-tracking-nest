@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model m_user {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  email         String   @unique
+  password_hash String
+  role          String
+  created_at    DateTime @default(now())
+
+  created_projects m_project[]        @relation("ProjectCreator")
+  project_members  t_project_member[]
+  task_assignees   t_task_assignee[]
+
+  @@map("m_user")
+}
+
+model m_project {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  description String?
+  created_by  String   @db.Uuid
+  created_at  DateTime @default(now())
+
+  creator  m_user             @relation("ProjectCreator", fields: [created_by], references: [id])
+  members  t_project_member[]
+  epics    t_epic[]
+  statuses r_status[]
+
+  @@map("m_project")
+}
+
+model t_project_member {
+  id         String @id @default(uuid()) @db.Uuid
+  project_id String @db.Uuid
+  user_id    String @db.Uuid
+  role       String
+
+  project m_project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  user    m_user    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([project_id, user_id])
+  @@map("t_project_member")
+}
+
+model t_epic {
+  id          String    @id @default(uuid()) @db.Uuid
+  project_id  String    @db.Uuid
+  title       String
+  description String?
+  start_date  DateTime?
+  end_date    DateTime?
+  created_at  DateTime  @default(now())
+
+  project m_project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  tasks   t_task[]
+
+  @@map("t_epic")
+}
+
+model r_status {
+  id         String  @id @default(uuid()) @db.Uuid
+  project_id String  @db.Uuid
+  name       String
+  order      Int
+  is_default Boolean @default(false)
+
+  project m_project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  tasks   t_task[]
+
+  @@map("r_status")
+}
+
+model t_task {
+  id          String    @id @default(uuid()) @db.Uuid
+  epic_id     String    @db.Uuid
+  status_id   String    @db.Uuid
+  title       String
+  description String?
+  priority    String?
+  due_date    DateTime?
+  created_at  DateTime  @default(now())
+
+  epic      t_epic            @relation(fields: [epic_id], references: [id], onDelete: Cascade)
+  status    r_status          @relation(fields: [status_id], references: [id])
+  assignees t_task_assignee[]
+
+  @@map("t_task")
+}
+
+model t_task_assignee {
+  id      String @id @default(uuid()) @db.Uuid
+  task_id String @db.Uuid
+  user_id String @db.Uuid
+
+  task t_task @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  user m_user @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([task_id, user_id])
+  @@map("t_task_assignee")
+}
