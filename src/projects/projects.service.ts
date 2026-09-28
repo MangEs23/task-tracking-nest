@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -16,35 +15,23 @@ import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Helper internal: Pengecekan otorisasi admin di proyek tertentu.
-   */
-  private async checkAdminAccess(projectId: string, userId: string) {
-    const project = await this.prisma.m_project.findFirst({
+  private async verifyProjectAdmin(projectId: string, userId: string) {
+    const membership = await this.prisma.t_project_member.findFirst({
       where: {
-        id: projectId,
-        members: {
-          some: { user_id: userId },
-        },
-      },
-      include: {
-        members: {
-          where: { user_id: userId },
-          select: { role: true },
-        },
+        project_id: projectId,
+        user_id: userId,
       },
     });
 
-    if (!project) {
-      throw new NotFoundException('Project tidak ditemukan atau Anda tidak memiliki akses');
+    if (!membership) {
+      throw new NotFoundException('Project not found');
     }
 
-    const userRole = (project as any).members?.[0]?.role;
-    if (userRole !== 'admin') {
-      throw new ForbiddenException('Aksi ini hanya dapat dilakukan oleh Admin proyek');
+    if (membership.role !== 'admin') {
+      throw new ForbiddenException('Only project admin can perform this action');
     }
 
-    return project;
+    return membership;
   }
 
   async create(userId: string, createProjectDto: CreateProjectDto) {
@@ -70,14 +57,7 @@ export class ProjectsService {
         },
       });
 
-      return {
-        statusCode: 201,
-        message: 'Project created successfully',
-        data: {
-          ...newProject,
-          my_role: 'admin',
-        },
-      };
+      return newProject;
     } catch (error) {
       throw new InternalServerErrorException(
         `Gagal membuat proyek: ${(error as Error).message || 'Internal server error'}`,
@@ -94,106 +74,122 @@ export class ProjectsService {
       },
       include: {
         members: {
-          where: { user_id: userId },
-          select: { role: true },
+          select: {
+            user_id: true,
+            role: true,
+          },
         },
       },
       orderBy: { created_at: 'desc' },
     });
 
-    return {
-      statusCode: 200,
-      data: projects.map((project: any) => ({
+    return projects.map((project) => {
+      const myMember = project.members.find((m) => m.user_id === userId);
+      return {
         id: project.id,
         name: project.name,
         description: project.description,
-        created_by: project.created_by,
+        my_role: myMember?.role || 'member',
+        member_count: project.members.length,
         created_at: project.created_at,
-        my_role: project.members?.[0]?.role || 'member',
-      })),
-    };
+      };
+    });
   }
 
   async findOne(id: string, userId: string) {
-    const project = await this.prisma.m_project.findFirst({
+    const membership = await this.prisma.t_project_member.findFirst({
       where: {
-        id,
-        members: {
-          some: { user_id: userId },
-        },
+        project_id: id,
+        user_id: userId,
       },
+    });
+
+    if (!membership) {
+      throw new NotFoundException('Project not found');
+    }
+
+    const project = await this.prisma.m_project.findUnique({
+      where: { id },
       include: {
         members: {
-          where: { user_id: userId },
-          select: { role: true },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
+            },
+          },
         },
       },
     });
 
     if (!project) {
-      throw new NotFoundException('Project tidak ditemukan atau Anda tidak memiliki akses');
+      throw new NotFoundException('Project not found');
     }
 
     return {
-      statusCode: 200,
-      data: {
-        id: project.id,
-        name: project.name,
-        description: project.description,
-        created_by: project.created_by,
-        created_at: project.created_at,
-        my_role: (project as any).members?.[0]?.role || 'member',
-      },
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      created_by: project.created_by,
+      created_at: project.created_at,
+      members: project.members.map((m) => ({
+        user_id: m.user_id,
+        name: m.user?.name || '',
+        email: m.user?.email || '',
+        role: m.role,
+      })),
     };
   }
 
   async update(id: string, userId: string, updateProjectDto: UpdateProjectDto) {
-    await this.checkAdminAccess(id, userId);
+    await this.verifyProjectAdmin(id, userId);
 
     const updatedProject = await this.prisma.m_project.update({
       where: { id },
       data: {
-        ...(updateProjectDto.name && { name: updateProjectDto.name }),
+        ...(updateProjectDto.name !== undefined && { name: updateProjectDto.name }),
         ...(updateProjectDto.description !== undefined && { description: updateProjectDto.description }),
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        created_by: true,
+        created_at: true,
       },
     });
 
-    return {
-      statusCode: 200,
-      message: 'Project updated successfully',
-      data: {
-        ...updatedProject,
-        my_role: 'admin',
-      },
-    };
+    return updatedProject;
   }
 
+
   async remove(id: string, userId: string) {
-    await this.checkAdminAccess(id, userId);
+    await this.verifyProjectAdmin(id, userId);
+
+    await this.prisma.t_project_member.deleteMany({
+      where: { project_id: id },
+    });
 
     await this.prisma.m_project.delete({
       where: { id },
     });
 
-    return {
-      statusCode: 200,
-      message: 'Project deleted successfully',
-    };
+    return null;
   }
 
-  // ==========================================
-  // MANAJEMEN MEMBER PROYEK
-  // ==========================================
-
+  
   async addMember(projectId: string, adminUserId: string, dto: AddMemberDto) {
-    await this.checkAdminAccess(projectId, adminUserId);
+    await this.verifyProjectAdmin(projectId, adminUserId);
 
     const targetUser = await this.prisma.m_user.findUnique({
       where: { email: dto.email },
     });
 
     if (!targetUser) {
-      throw new NotFoundException(`User dengan email '${dto.email}' tidak ditemukan`);
+      throw new NotFoundException('User not found');
     }
 
     const existingMember = await this.prisma.t_project_member.findFirst({
@@ -204,7 +200,7 @@ export class ProjectsService {
     });
 
     if (existingMember) {
-      throw new ConflictException('User tersebut sudah menjadi anggota di proyek ini');
+      throw new BadRequestException('User is already a member of this project');
     }
 
     const newMember = await this.prisma.t_project_member.create({
@@ -216,9 +212,10 @@ export class ProjectsService {
     });
 
     return {
-      statusCode: 201,
-      message: 'Member berhasil ditambahkan ke proyek',
-      data: newMember,
+      user_id: targetUser.id,
+      name: targetUser.name,
+      email: targetUser.email,
+      role: newMember.role,
     };
   }
 
@@ -228,59 +225,54 @@ export class ProjectsService {
     targetUserId: string,
     dto: UpdateMemberRoleDto,
   ) {
-    await this.checkAdminAccess(projectId, adminUserId);
+    await this.verifyProjectAdmin(projectId, adminUserId);
 
-    const targetMember = await this.prisma.t_project_member.findFirst({
+    const member = await this.prisma.t_project_member.findFirst({
       where: {
         project_id: projectId,
         user_id: targetUserId,
       },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
     });
 
-    if (!targetMember) {
-      throw new NotFoundException('Member tidak ditemukan di proyek ini');
-    }
-
-    if (targetMember.role === 'admin' && dto.role === 'member') {
-      const adminCount = await this.prisma.t_project_member.count({
-        where: {
-          project_id: projectId,
-          role: 'admin',
-        },
-      });
-
-      if (adminCount <= 1) {
-        throw new BadRequestException('Tidak dapat mengubah role admin terakhir. Proyek harus memiliki minimal 1 admin.');
-      }
+    if (!member) {
+      throw new NotFoundException('Member not found in this project');
     }
 
     const updatedMember = await this.prisma.t_project_member.update({
-      where: { id: targetMember.id },
+      where: { id: member.id },
       data: { role: dto.role },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
     });
 
     return {
-      statusCode: 200,
-      message: 'Role member berhasil diperbarui',
-      data: updatedMember,
+      user_id: updatedMember.user.id,
+      name: updatedMember.user.name,
+      email: updatedMember.user.email,
+      role: updatedMember.role,
     };
   }
 
   async removeMember(projectId: string, adminUserId: string, targetUserId: string) {
-    await this.checkAdminAccess(projectId, adminUserId);
+    await this.verifyProjectAdmin(projectId, adminUserId);
 
-    const targetMember = await this.prisma.t_project_member.findFirst({
-      where: {
-        project_id: projectId,
-        user_id: targetUserId,
-      },
-    });
-
-    if (!targetMember) {
-      throw new NotFoundException('Member tidak ditemukan di proyek ini');
-    }
-
-    if (targetMember.role === 'admin') {
+    if (targetUserId === adminUserId) {
       const adminCount = await this.prisma.t_project_member.count({
         where: {
           project_id: projectId,
@@ -289,17 +281,25 @@ export class ProjectsService {
       });
 
       if (adminCount <= 1) {
-        throw new BadRequestException('Admin terakhir tidak dapat dikeluarkan dari proyek.');
+        throw new BadRequestException('Cannot remove yourself as the last admin of the project');
       }
     }
 
-    await this.prisma.t_project_member.delete({
-      where: { id: targetMember.id },
+    const member = await this.prisma.t_project_member.findFirst({
+      where: {
+        project_id: projectId,
+        user_id: targetUserId,
+      },
     });
 
-    return {
-      statusCode: 200,
-      message: 'Member berhasil dikeluarkan dari proyek',
-    };
+    if (!member) {
+      throw new NotFoundException('Member not found in this project');
+    }
+
+    await this.prisma.t_project_member.delete({
+      where: { id: member.id },
+    });
+
+    return null;
   }
 }
