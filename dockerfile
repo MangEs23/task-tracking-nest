@@ -14,7 +14,7 @@ COPY . .
 ENV DATABASE_URL="postgresql://postgres:postgres@localhost:5432/project_db?schema=public"
 RUN npx prisma generate
 EXPOSE 3000
-CMD ["npm", "run", "start:dev"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:dev"]
 
 # Build
 FROM base AS builder
