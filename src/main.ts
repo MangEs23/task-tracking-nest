@@ -16,6 +16,16 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('docs', app, document); // akses di /docs
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.enableCors({
+    origin: true,
+    credentials: true,
+    exposedHeaders: [
+      "Content-Disposition",
+      "Content-Length",
+    ],
+    // methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    // allowedHeaders: '*',  // Izinkan semua headers
+  });
 
   await app.listen(process.env.PORT ?? 3000);
   console.log(`Swagger available at http://localhost:3000/docs`);
