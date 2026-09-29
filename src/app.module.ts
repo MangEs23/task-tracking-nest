@@ -6,10 +6,10 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ProjectsModule } from './projects/projects.module';
-
+import { EpicsModule } from './epics/epics.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ProjectsModule],
+  imports: [PrismaModule, AuthModule, ProjectsModule, EpicsModule],
   controllers: [AppController],
   providers: [
     AppService,
