@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   CanActivate,
   ExecutionContext,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -23,7 +25,13 @@ export class ProjectMemberGuard implements CanActivate {
     const projectId = request.params.projectId || request.params.id;
 
     if (!projectId) {
-      throw new NotFoundException('Project ID tidak ditemukan pada parameter URL');
+      throw new NotFoundException(
+        'Project ID tidak ditemukan pada parameter URL',
+      );
+    }
+
+    if (!isUUID(projectId)) {
+      throw new BadRequestException('Validation failed (uuid is expected)');
     }
 
     const member = await this.prisma.t_project_member.findFirst({

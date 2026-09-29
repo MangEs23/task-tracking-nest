@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { BadRequestException } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 
 @Injectable()
 export class ProjectAdminGuard implements CanActivate {
@@ -20,11 +22,15 @@ export class ProjectAdminGuard implements CanActivate {
     }
 
     const userId = user.id || user.sub;
-    // Mendukung penamaan parameter :projectId maupun :id
     const projectId = request.params.projectId || request.params.id;
 
     if (!projectId) {
-      throw new NotFoundException('Project ID tidak ditemukan pada parameter URL');
+      throw new NotFoundException(
+        'Project ID tidak ditemukan pada parameter URL',
+      );
+    }
+    if (!isUUID(projectId)) {
+      throw new BadRequestException('Validation failed (uuid is expected)');
     }
 
     const member = await this.prisma.t_project_member.findFirst({
@@ -36,7 +42,9 @@ export class ProjectAdminGuard implements CanActivate {
     });
 
     if (!member) {
-      throw new ForbiddenException('Aksi ini hanya dapat dilakukan oleh Admin proyek');
+      throw new ForbiddenException(
+        'Aksi ini hanya dapat dilakukan oleh Admin proyek',
+      );
     }
 
     request.projectMember = member;
