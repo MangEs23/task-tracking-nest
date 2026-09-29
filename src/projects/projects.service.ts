@@ -28,7 +28,9 @@ export class ProjectsService {
     }
 
     if (membership.role !== 'admin') {
-      throw new ForbiddenException('Only project admin can perform this action');
+      throw new ForbiddenException(
+        'Only project admin can perform this action',
+      );
     }
 
     return membership;
@@ -150,8 +152,12 @@ export class ProjectsService {
     const updatedProject = await this.prisma.m_project.update({
       where: { id },
       data: {
-        ...(updateProjectDto.name !== undefined && { name: updateProjectDto.name }),
-        ...(updateProjectDto.description !== undefined && { description: updateProjectDto.description }),
+        ...(updateProjectDto.name !== undefined && {
+          name: updateProjectDto.name,
+        }),
+        ...(updateProjectDto.description !== undefined && {
+          description: updateProjectDto.description,
+        }),
       },
       select: {
         id: true,
@@ -164,7 +170,6 @@ export class ProjectsService {
 
     return updatedProject;
   }
-
 
   async remove(id: string, userId: string) {
     await this.verifyProjectAdmin(id, userId);
@@ -180,7 +185,6 @@ export class ProjectsService {
     return null;
   }
 
-  
   async addMember(projectId: string, adminUserId: string, dto: AddMemberDto) {
     await this.verifyProjectAdmin(projectId, adminUserId);
 
@@ -269,7 +273,11 @@ export class ProjectsService {
     };
   }
 
-  async removeMember(projectId: string, adminUserId: string, targetUserId: string) {
+  async removeMember(
+    projectId: string,
+    adminUserId: string,
+    targetUserId: string,
+  ) {
     await this.verifyProjectAdmin(projectId, adminUserId);
 
     if (targetUserId === adminUserId) {
@@ -281,7 +289,9 @@ export class ProjectsService {
       });
 
       if (adminCount <= 1) {
-        throw new BadRequestException('Cannot remove yourself as the last admin of the project');
+        throw new BadRequestException(
+          'Cannot remove yourself as the last admin of the project',
+        );
       }
     }
 

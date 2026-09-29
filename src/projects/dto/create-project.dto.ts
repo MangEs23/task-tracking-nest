@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+  MaxLength,
+} from 'class-validator';
 
 export class CreateProjectDto {
   @ApiProperty({
@@ -8,7 +14,9 @@ export class CreateProjectDto {
   })
   @IsString()
   @IsNotEmpty({ message: 'Nama project tidak boleh kosong' })
-  @Length(3, 100, { message: 'Nama project harus antara 3 hingga 100 karakter' })
+  @Length(3, 100, {
+    message: 'Nama project harus antara 3 hingga 100 karakter',
+  })
   name: string;
 
   @ApiPropertyOptional({

@@ -19,10 +19,7 @@ async function bootstrap() {
   app.enableCors({
     origin: true,
     credentials: true,
-    exposedHeaders: [
-      "Content-Disposition",
-      "Content-Length",
-    ],
+    exposedHeaders: ['Content-Disposition', 'Content-Length'],
     // methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     // allowedHeaders: '*',  // Izinkan semua headers
   });
