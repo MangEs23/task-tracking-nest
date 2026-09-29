@@ -71,6 +71,7 @@ model r_status {
   name       String
   order      Int
   is_default Boolean @default(false)
+  is_done    Boolean @default(false)
 
   project m_project @relation(fields: [project_id], references: [id], onDelete: Cascade)
   tasks   t_task[]
