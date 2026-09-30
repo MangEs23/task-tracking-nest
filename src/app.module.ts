@@ -7,9 +7,10 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ProjectsModule } from './projects/projects.module';
 import { EpicsModule } from './epics/epics.module';
+import { TasksModule } from './tasks/tasks.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ProjectsModule, EpicsModule],
+  imports: [PrismaModule, AuthModule, ProjectsModule, EpicsModule, TasksModule],
   controllers: [AppController],
   providers: [
     AppService,
