@@ -62,7 +62,7 @@ export class EpicsService {
   async findAllByProject(projectId: string) {
     const epics = await this.prisma.t_epic.findMany({
       where: { project_id: projectId },
-      select: { id: true, title: true, start_date: true, end_date: true },
+      select: { id: true, title: true, description: true, start_date: true, end_date: true },
       orderBy: { start_date: 'asc' },
     });
 
