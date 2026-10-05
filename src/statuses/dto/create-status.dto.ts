@@ -7,18 +7,18 @@ export class CreateStatusDto {
   @IsString()
   name: string;
 
-  @ApiPropertyOptional({ example: 2, description: 'Urutan tampilan status (opsional)' })
-  @IsOptional()
-  @IsNumber({}, { message: 'Order harus berupa angka' })
-  order?: number;
+  // @ApiPropertyOptional({ example: 2, description: 'Urutan tampilan status (opsional)' })
+  // @IsOptional()
+  // @IsNumber({}, { message: 'Order harus berupa angka' })
+  // order?: number;
 
-  @ApiPropertyOptional({ example: false, default: false, description: 'Menandakan apakah status ini status default proyek' })
-  @IsOptional()
-  @IsBoolean()
-  is_default?: boolean = false;
+  // @ApiPropertyOptional({ example: false, default: false, description: 'Menandakan apakah status ini status default proyek' })
+  // @IsOptional()
+  // @IsBoolean()
+  // is_default?: boolean = false;
 
-  @ApiPropertyOptional({ example: false, default: false, description: 'Menandakan apakah status ini menandakan task selesai' })
-  @IsOptional()
-  @IsBoolean()
-  is_done?: boolean = false;
+  // @ApiPropertyOptional({ example: false, default: false, description: 'Menandakan apakah status ini menandakan task selesai' })
+  // @IsOptional()
+  // @IsBoolean()
+  // is_done?: boolean = false;
 }

@@ -79,28 +79,17 @@ export class StatusesService {
     await this.verifyProjectMember(projectId, userId);
 
     // Hitung order otomatis jika tidak dikirim
-    let orderValue = dto.order;
-    if (orderValue === undefined || orderValue === null) {
-      const maxOrderStatus = await this.statusModel.findFirst({
-        where: { project_id: projectId },
-        orderBy: { order: 'desc' },
-      });
-      orderValue = maxOrderStatus ? maxOrderStatus.order + 1 : 1;
-    }
-
-    // Jika is_default = true, unset status default lama pada proyek ini
-    if (dto.is_default) {
-      await this.statusModel.updateMany({
-        where: { project_id: projectId, is_default: true },
-        data: { is_default: false },
-      });
-    }
+    const maxOrderStatus = await this.statusModel.findFirst({
+      where: { project_id: projectId },
+      orderBy: { order: 'desc' },
+    });
+    const orderValue = maxOrderStatus ? maxOrderStatus.order + 1 : 1;
 
     // Jika ini status pertama di proyek, paksa menjadi default
     const existingCount = await this.statusModel.count({
       where: { project_id: projectId },
     });
-    const isDefault = existingCount === 0 ? true : Boolean(dto.is_default);
+    const isDefault = existingCount === 0 ? true : false;
 
     return await this.statusModel.create({
       data: {
@@ -108,7 +97,6 @@ export class StatusesService {
         name: dto.name,
         order: orderValue,
         is_default: isDefault,
-        is_done: Boolean(dto.is_done),
       },
     });
   }

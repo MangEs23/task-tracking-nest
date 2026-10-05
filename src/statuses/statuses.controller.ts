@@ -10,12 +10,16 @@ import {
   Patch,
   Post,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { StatusesService } from './statuses.service';
 import { CreateStatusDto } from './dto/create-status.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { ReorderStatusDto } from './dto/reorder-status.dto';
+import { ProjectAdminGuard } from '../projects/guards/project-admin.guard';
+import { ProjectMemberGuard } from '../projects/guards/project-member.guard';
+import { StatusAdminGuard } from './guards/status-admin.guard';
 
 @ApiTags('Statuses')
 @ApiBearerAuth()
@@ -24,10 +28,11 @@ export class StatusesController {
   constructor(private readonly statusesService: StatusesService) {}
 
   @Post('projects/:projectId/statuses')
+  @UseGuards(ProjectAdminGuard)
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Buat status kustom baru untuk proyek' })
+  @ApiOperation({ summary: 'Buat status kustom baru untuk proyek (Admin Only)' })
   @ApiResponse({ status: 201, description: 'Status berhasil dibuat' })
-  @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
+  @ApiResponse({ status: 403, description: 'Bukan member / bukan admin proyek' })
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Req() req: any,
@@ -38,6 +43,7 @@ export class StatusesController {
   }
 
   @Get('projects/:projectId/statuses')
+  @UseGuards(ProjectMemberGuard)
   @ApiOperation({ summary: 'Ambil daftar status proyek terurut berdasarkan order' })
   @ApiResponse({ status: 200, description: 'Berhasil mengambil daftar status' })
   @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
@@ -49,11 +55,28 @@ export class StatusesController {
     return this.statusesService.findAllByProject(projectId, userId);
   }
 
+  
+  @Patch('projects/:projectId/statuses/reorder')
+  @UseGuards(ProjectAdminGuard)
+  @ApiOperation({ summary: 'Ubah urutan tampilan banyak status sekaligus (Admin Only)' })
+  @ApiResponse({ status: 200, description: 'Urutan status berhasil diperbarui' })
+  @ApiResponse({ status: 400, description: 'Satu atau lebih status_id invalid' })
+  @ApiResponse({ status: 403, description: 'Bukan member / bukan admin proyek' })
+  reorder(
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Req() req: any,
+    @Body() dto: ReorderStatusDto,
+  ) {
+    const userId = req.user.id || req.user.sub;
+    return this.statusesService.reorder(projectId, userId, dto);
+  }
+
   @Patch('statuses/:id')
-  @ApiOperation({ summary: 'Perbarui data status (nama, order, is_default, is_done)' })
+  @UseGuards(StatusAdminGuard)
+  @ApiOperation({ summary: 'Perbarui data status (Admin Only)' })
   @ApiResponse({ status: 200, description: 'Status berhasil diperbarui' })
   @ApiResponse({ status: 400, description: 'Validasi default status gagal' })
-  @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
+  @ApiResponse({ status: 403, description: 'Bukan member / bukan admin proyek' })
   @ApiResponse({ status: 404, description: 'Status tidak ditemukan' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -65,11 +88,12 @@ export class StatusesController {
   }
 
   @Delete('statuses/:id')
+  @UseGuards(StatusAdminGuard)
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Hapus status (dengan proteksi)' })
+  @ApiOperation({ summary: 'Hapus status dengan proteksi (Admin Only)' })
   @ApiResponse({ status: 204, description: 'Status berhasil dihapus' })
   @ApiResponse({ status: 400, description: 'Status terakhir atau masih digunakan oleh task' })
-  @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
+  @ApiResponse({ status: 403, description: 'Bukan member / bukan admin proyek' })
   @ApiResponse({ status: 404, description: 'Status tidak ditemukan' })
   remove(
     @Param('id', ParseUUIDPipe) id: string,
@@ -77,19 +101,5 @@ export class StatusesController {
   ) {
     const userId = req.user.id || req.user.sub;
     return this.statusesService.remove(id, userId);
-  }
-
-  @Patch('projects/:projectId/statuses/reorder')
-  @ApiOperation({ summary: 'Ubah urutan tampilan banyak status sekaligus (reorder)' })
-  @ApiResponse({ status: 200, description: 'Urutan status berhasil diperbarui' })
-  @ApiResponse({ status: 400, description: 'Satu atau lebih status_id invalid' })
-  @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
-  reorder(
-    @Param('projectId', ParseUUIDPipe) projectId: string,
-    @Req() req: any,
-    @Body() dto: ReorderStatusDto,
-  ) {
-    const userId = req.user.id || req.user.sub;
-    return this.statusesService.reorder(projectId, userId, dto);
   }
 }
