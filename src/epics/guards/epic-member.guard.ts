@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AUTH_MESSAGES } from '../../common/constants/auth-messages';
 
 @Injectable()
 export class EpicMemberGuard implements CanActivate {
@@ -36,13 +37,12 @@ export class EpicMemberGuard implements CanActivate {
     }
 
     const member = await this.prisma.t_project_member.findFirst({
-      where: { project_id: epic.project_id, user_id: userId },
-    });
+  where: { project_id: epic.project_id, user_id: userId },
+});
+if (!member) throw new ForbiddenException(AUTH_MESSAGES.NOT_MEMBER);
+if (member.role !== 'admin') throw new ForbiddenException(AUTH_MESSAGES.NOT_ADMIN);
 
-    if (!member) {
-      throw new ForbiddenException('You are not a member of this project');
-    }
-
-    return true;
+request.projectMember = member;
+return true;
   }
 }

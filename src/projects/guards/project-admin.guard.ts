@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { BadRequestException } from '@nestjs/common';
 import { isUUID } from 'class-validator';
+import { AUTH_MESSAGES } from '../../common/constants/auth-messages';
 
 @Injectable()
 export class ProjectAdminGuard implements CanActivate {
@@ -34,21 +35,12 @@ export class ProjectAdminGuard implements CanActivate {
     }
 
     const member = await this.prisma.t_project_member.findFirst({
-      where: {
-        project_id: projectId,
-        user_id: userId,
-        role: 'admin',
-      },
-    });
+  where: { project_id: projectId, user_id: userId },
+});
+if (!member) throw new ForbiddenException(AUTH_MESSAGES.NOT_MEMBER);
+if (member.role !== 'admin') throw new ForbiddenException(AUTH_MESSAGES.NOT_ADMIN);
 
-    if (!member) {
-      throw new ForbiddenException(
-        'Aksi ini hanya dapat dilakukan oleh Admin proyek',
-      );
-    }
-
-    request.projectMember = member;
-
-    return true;
+request.projectMember = member;
+return true;
   }
 }
