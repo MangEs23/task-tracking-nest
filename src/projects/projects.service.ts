@@ -9,6 +9,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { getEpicsWithProgress } from '../epics/epic-progress.helper';
 
 const PROJECT_SELECT = {
   id: true,
@@ -90,6 +91,91 @@ export class ProjectsService {
         name: m.user?.name || '',
         email: m.user?.email || '',
         role: m.role,
+      })),
+    };
+  }
+
+    async getDashboard(projectId: string, dueWithin = 3) {
+    // Batas "hari ini" (00:00 UTC)
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+
+    // Akhir rentang due soon: seluruh hari ke-N ikut dihitung
+    const dueSoonEnd = new Date(todayStart);
+    dueSoonEnd.setUTCDate(dueSoonEnd.getUTCDate() + dueWithin + 1);
+
+    const projectScope = { epic: { project_id: projectId } };
+
+    const [statuses, statusGroups, priorityGroups, overdueCount, dueSoonCount, epics] =
+      await Promise.all([
+        // Semua status project (agar status dengan 0 task tetap muncul)
+        this.prisma.r_status.findMany({
+          where: { project_id: projectId },
+          select: { id: true, name: true },
+          orderBy: { order: 'asc' },
+        }),
+        // COUNT ... GROUP BY status_id
+        this.prisma.t_task.groupBy({
+          by: ['status_id'],
+          where: projectScope,
+          _count: { _all: true },
+        }),
+        // COUNT ... GROUP BY priority
+        this.prisma.t_task.groupBy({
+          by: ['priority'],
+          where: projectScope,
+          _count: { _all: true },
+        }),
+        // Overdue: due_date < hari ini dan status belum done
+        this.prisma.t_task.count({
+          where: {
+            ...projectScope,
+            due_date: { lt: todayStart },
+            status: { is_done: false },
+          },
+        }),
+        // Due soon: hari ini s/d hari ke-N dan status belum done
+        this.prisma.t_task.count({
+          where: {
+            ...projectScope,
+            due_date: { gte: todayStart, lt: dueSoonEnd },
+            status: { is_done: false },
+          },
+        }),
+        getEpicsWithProgress(this.prisma, projectId),
+      ]);
+
+    const statusCountMap = new Map(
+      statusGroups.map((g) => [g.status_id, g._count._all]),
+    );
+    const priorityCountMap = new Map(
+      priorityGroups.map((g) => [g.priority, g._count._all]),
+    );
+
+    const by_status = statuses.map((s) => ({
+      status_id: s.id,
+      status_name: s.name,
+      count: statusCountMap.get(s.id) ?? 0,
+    }));
+
+    const PRIORITIES = ['Low', 'Medium', 'High', 'Urgent'] as const;
+    const by_priority = PRIORITIES.map((priority) => ({
+      priority,
+      count: priorityCountMap.get(priority) ?? 0,
+    }));
+
+    return {
+      total_tasks: by_status.reduce((sum, s) => sum + s.count, 0),
+      by_status,
+      by_priority,
+      overdue_count: overdueCount,
+      due_soon_count: dueSoonCount,
+      epics: epics.map((e) => ({
+        id: e.id,
+        title: e.title,
+        progress: e.progress,
+        task_total: e.task_total,
+        task_done: e.task_done,
       })),
     };
   }

@@ -20,6 +20,8 @@ import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
 import { ProjectAdminGuard } from './guards/project-admin.guard';
 import { ProjectMemberGuard } from './guards/project-member.guard';
+import { Query } from '@nestjs/common';
+import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
@@ -56,6 +58,20 @@ export class ProjectsController {
   @ApiResponse({ status: 404, description: 'Project not found' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.projectsService.findOne(id);
+  }
+
+    @Get(':id/dashboard')
+  @UseGuards(ProjectMemberGuard)
+  @ApiOperation({ summary: 'Get project dashboard summary (aggregated)' })
+  @ApiResponse({ status: 200, description: 'Success' })
+  @ApiResponse({ status: 400, description: 'Invalid UUID / invalid due_within' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Not a member of this project' })
+  getDashboard(
+    @Param('id', ParseUUIDPipe) projectId: string,
+    @Query() query: DashboardQueryDto,
+  ) {
+    return this.projectsService.getDashboard(projectId, query.due_within);
   }
 
   @Patch(':id')

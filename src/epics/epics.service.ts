@@ -8,6 +8,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEpicDto } from './dto/create-epic.dto';
 import { UpdateEpicDto } from './dto/update-epic.dto';
+import { getEpicsWithProgress } from './epic-progress.helper';
 
 const EPIC_SELECT = {
   id: true,
@@ -59,43 +60,8 @@ export class EpicsService {
     });
   }
 
-  async findAllByProject(projectId: string) {
-    const epics = await this.prisma.t_epic.findMany({
-      where: { project_id: projectId },
-      select: { id: true, title: true, description: true, start_date: true, end_date: true },
-      orderBy: { start_date: 'asc' },
-    });
-
-    if (epics.length === 0) return [];
-
-    const epicIds = epics.map((e) => e.id);
-
-    const [totals, dones] = await Promise.all([
-      this.prisma.t_task.groupBy({
-        by: ['epic_id'],
-        where: { epic_id: { in: epicIds } },
-        _count: { _all: true },
-      }),
-      this.prisma.t_task.groupBy({
-        by: ['epic_id'],
-        where: { epic_id: { in: epicIds }, status: { is_done: true } },
-        _count: { _all: true },
-      }),
-    ]);
-
-    const totalMap = new Map(totals.map((t) => [t.epic_id, t._count._all]));
-    const doneMap = new Map(dones.map((d) => [d.epic_id, d._count._all]));
-
-    return epics.map((epic) => {
-      const task_total = totalMap.get(epic.id) ?? 0;
-      const task_done = doneMap.get(epic.id) ?? 0;
-      return {
-        ...epic,
-        task_total,
-        task_done,
-        progress: this.calcProgress(task_done, task_total),
-      };
-    });
+    async findAllByProject(projectId: string) {
+    return getEpicsWithProgress(this.prisma, projectId);
   }
 
   async findOne(id: string) {

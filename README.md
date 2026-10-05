@@ -50,7 +50,7 @@ npm run start:dev
 ```
 
 API: http://localhost:3000  
-Swagger: http://localhost:3000/api  
+Swagger: http://localhost:3000/docs  
 Postgres: `localhost:5432`
 
 Stop DB:
@@ -74,7 +74,7 @@ docker compose up --build -d
 ```
 
 API: http://localhost:3000  
-Swagger: http://localhost:3000/api  
+Swagger: http://localhost:3000/docs  
 Postgres: `localhost:5432`
 
 Stop:
@@ -123,7 +123,7 @@ curl http://localhost:3000/me \
 Setelah API jalan, buka:
 
 ```
-http://localhost:3000/api
+http://localhost:3000/docs
 ```
 
 Klik **Authorize**, isi:
