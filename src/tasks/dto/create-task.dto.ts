@@ -9,33 +9,28 @@ export enum TaskPriority {
 }
 
 export class CreateTaskDto {
-  @ApiProperty({ example: 'Implementasi JWT Auth', description: 'Judul task' })
-  @IsNotEmpty({ message: 'Title tidak boleh kosong' })
+  @ApiProperty({ example: 'Implementasi JWT Auth' })
   @IsString()
+  @IsNotEmpty({ message: 'title must not be empty' })
   title: string;
 
-  @ApiPropertyOptional({ example: 'Membuat guard dan strategy di NestJS', description: 'Deskripsi task' })
+  @ApiPropertyOptional({ example: 'Membuat guard dan strategy di NestJS' })
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({
-    example: 'Medium',
-    enum: TaskPriority,
-    default: TaskPriority.MEDIUM,
-    description: 'Prioritas task (Low | Medium | High | Urgent)',
-  })
-  @IsOptional()
-  @IsEnum(TaskPriority, { message: 'Priority harus berupa Low, Medium, High, atau Urgent' })
-  priority?: TaskPriority = TaskPriority.MEDIUM;
+  @ApiProperty({ enum: TaskPriority, example: TaskPriority.MEDIUM })
+  @IsNotEmpty({ message: 'priority is required' })
+  @IsEnum(TaskPriority, { message: 'priority must be one of Low, Medium, High, Urgent' })
+  priority: TaskPriority;
 
-  @ApiPropertyOptional({ example: '2026-10-15T23:59:59.000Z', description: 'Tenggat waktu task (ISO Date)' })
+  @ApiPropertyOptional({ example: '2026-10-15T23:59:59.000Z' })
   @IsOptional()
-  @IsDateString({}, { message: 'Format due_date harus ISO date string' })
+  @IsDateString({}, { message: 'due_date must be a valid ISO date string' })
   due_date?: string;
 
-  @ApiPropertyOptional({ example: '550e8400-e29b-41d4-a716-446655440000', description: 'ID Status (opsional, jika kosong akan menggunakan default status proyek)' })
+  @ApiPropertyOptional({ description: 'Kosong = pakai status default project' })
   @IsOptional()
-  @IsUUID('4', { message: 'status_id harus berupa UUID v4 valid' })
+  @IsUUID('4', { message: 'status_id must be a valid UUID v4' })
   status_id?: string;
 }

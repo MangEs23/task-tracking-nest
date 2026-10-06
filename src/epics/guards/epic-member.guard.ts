@@ -19,7 +19,7 @@ export class EpicMemberGuard implements CanActivate {
     const userId = request.user?.id;
 
     if (!userId) {
-      throw new ForbiddenException('User tidak terautentikasi');
+      throw new ForbiddenException(AUTH_MESSAGES.UNAUTHENTICATED);
     }
 
     const epicId = request.params.id;
@@ -31,18 +31,18 @@ export class EpicMemberGuard implements CanActivate {
       where: { id: epicId },
       select: { project_id: true },
     });
-
     if (!epic) {
       throw new NotFoundException('Epic not found');
     }
 
     const member = await this.prisma.t_project_member.findFirst({
-  where: { project_id: epic.project_id, user_id: userId },
-});
-if (!member) throw new ForbiddenException(AUTH_MESSAGES.NOT_MEMBER);
-if (member.role !== 'admin') throw new ForbiddenException(AUTH_MESSAGES.NOT_ADMIN);
+      where: { project_id: epic.project_id, user_id: userId },
+    });
+    if (!member) {
+      throw new ForbiddenException(AUTH_MESSAGES.NOT_MEMBER);
+    }
 
-request.projectMember = member;
-return true;
+    request.projectMember = member;
+    return true;
   }
 }

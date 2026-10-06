@@ -1,24 +1,27 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsDateString, IsEnum, IsOptional, IsUUID, Matches } from 'class-validator';
 import { TaskPriority } from './create-task.dto';
 
+const UUID_OR_ME =
+  /^(me|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+
 export class FilterTaskDto {
-  @ApiPropertyOptional({ description: 'Filter berdasarkan status_id' })
+  @ApiPropertyOptional({ description: 'status_id' })
   @IsOptional()
-  @IsUUID('4', { message: 'status harus berupa UUID v4 valid' })
+  @IsUUID('4', { message: 'status must be a valid UUID v4' })
   status?: string;
 
-  @ApiPropertyOptional({ description: 'Filter berdasarkan user_id assignee' })
+  @ApiPropertyOptional({ description: 'user_id assignee, atau "me"' })
   @IsOptional()
-  @IsUUID('4', { message: 'assignee harus berupa UUID v4 valid' })
+  @Matches(UUID_OR_ME, { message: 'assignee must be a UUID v4 or "me"' })
   assignee?: string;
 
-  @ApiPropertyOptional({ enum: TaskPriority, description: 'Filter berdasarkan tingkat prioritas' })
+  @ApiPropertyOptional({ enum: TaskPriority })
   @IsOptional()
   @IsEnum(TaskPriority)
   priority?: TaskPriority;
 
-  @ApiPropertyOptional({ description: 'Filter task yang tenggat waktunya sebelum atau pada tanggal ini (ISO Date)' })
+  @ApiPropertyOptional({ description: 'Due date <= tanggal ini (ISO date)' })
   @IsOptional()
   @IsDateString()
   due_before?: string;

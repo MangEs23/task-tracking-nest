@@ -28,4 +28,4 @@ async function bootstrap() {
   await app.listen(process.env.PORT ?? 3000);
   console.log(`Swagger available at http://localhost:3000/docs`);
 }
-bootstrap();
+void bootstrap();

@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEpicDto } from './dto/create-epic.dto';
 import { UpdateEpicDto } from './dto/update-epic.dto';
-import { getEpicsWithProgress } from './epic-progress.helper';
+import { calcProgress, getEpicsWithProgress } from './epic-progress.helper';
 
 const EPIC_SELECT = {
   id: true,
@@ -36,11 +36,6 @@ export class EpicsService {
     if (start && end && end < start) {
       throw new BadRequestException('end_date must be after start_date');
     }
-  }
-
-  private calcProgress(done: number, total: number): number {
-    if (total === 0) return 0;
-    return Math.round((done / total) * 100);
   }
 
   async create(projectId: string, dto: CreateEpicDto) {
@@ -98,7 +93,7 @@ export class EpicsService {
       end_date: epic.end_date,
       task_total,
       task_done,
-      progress: this.calcProgress(task_done, task_total),
+      progress: calcProgress(task_done, task_total),
       tasks: epic.tasks.map((t) => ({
         id: t.id,
         title: t.title,

@@ -18,6 +18,8 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { AssignUserDto } from './dto/assign-user.dto';
 import { FilterTaskDto } from './dto/filter-task.dto';
+import { UseGuards } from '@nestjs/common';
+import { ProjectMemberGuard } from '../projects/guards/project-member.guard';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
@@ -128,9 +130,12 @@ export class TasksController {
   }
 
   @Get('projects/:projectId/tasks')
-  @ApiOperation({ summary: 'Ambil daftar task lintas-epic milik proyek dengan filter (Board/List View)' })
-  @ApiResponse({ status: 200, description: 'Berhasil mengambil daftar task' })
-  @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
+  @UseGuards(ProjectMemberGuard)
+  @ApiOperation({ summary: 'List task lintas-epic dengan filter (Board/List View)' })
+  @ApiResponse({ status: 200, description: 'Success' })
+  @ApiResponse({ status: 400, description: 'Invalid filter / UUID' })
+  @ApiResponse({ status: 403, description: 'Not a member of this project' })
+  @ApiResponse({ status: 404, description: 'Project not found' })
   findAllByProject(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Req() req: any,
