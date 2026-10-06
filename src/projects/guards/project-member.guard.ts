@@ -37,6 +37,11 @@ export class ProjectMemberGuard implements CanActivate {
     });
 
     if (!member) {
+      const project = await this.prisma.m_project.findUnique({
+        where: { id: projectId },
+        select: { id: true },
+      });
+      if (!project) throw new NotFoundException('Project not found');
       throw new ForbiddenException(AUTH_MESSAGES.NOT_MEMBER);
     }
 

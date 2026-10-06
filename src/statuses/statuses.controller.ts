@@ -33,6 +33,7 @@ export class StatusesController {
   @ApiOperation({ summary: 'Buat status kustom baru untuk proyek (Admin Only)' })
   @ApiResponse({ status: 201, description: 'Status berhasil dibuat' })
   @ApiResponse({ status: 403, description: 'Bukan member / bukan admin proyek' })
+  @ApiResponse({ status: 404, description: 'Proyek tidak ditemukan' })
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Req() req: any,
@@ -47,6 +48,7 @@ export class StatusesController {
   @ApiOperation({ summary: 'Ambil daftar status proyek terurut berdasarkan order' })
   @ApiResponse({ status: 200, description: 'Berhasil mengambil daftar status' })
   @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
+  @ApiResponse({ status: 404, description: 'Proyek tidak ditemukan' })
   findAllByProject(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Req() req: any,
@@ -62,6 +64,7 @@ export class StatusesController {
   @ApiResponse({ status: 200, description: 'Urutan status berhasil diperbarui' })
   @ApiResponse({ status: 400, description: 'Satu atau lebih status_id invalid' })
   @ApiResponse({ status: 403, description: 'Bukan member / bukan admin proyek' })
+  @ApiResponse({ status: 404, description: 'Proyek tidak ditemukan' })
   reorder(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Req() req: any,

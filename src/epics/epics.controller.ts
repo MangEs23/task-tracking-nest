@@ -43,8 +43,9 @@ export class EpicsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
     status: 403,
-    description: 'Not a project admin (or project not found)',
+    description: 'Not a project admin / not a member',
   })
+  @ApiResponse({ status: 404, description: 'Project not found' })
   create(
     @Param('projectId', ParseUUIDPipe) projectId: string,
     @Body() dto: CreateEpicDto,
@@ -60,8 +61,9 @@ export class EpicsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
     status: 403,
-    description: 'Not a project member (or project not found)',
+    description: 'Not a project member',
   })
+  @ApiResponse({ status: 404, description: 'Project not found' })
   findAll(@Param('projectId', ParseUUIDPipe) projectId: string) {
     return this.epicsService.findAllByProject(projectId);
   }

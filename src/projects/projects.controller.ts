@@ -56,9 +56,10 @@ export class ProjectsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Not a member of this project' })
   @ApiResponse({ status: 404, description: 'Project not found' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.projectsService.findOne(id);
-  }
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+  const userId = req.user.id || req.user.sub;
+  return this.projectsService.findOne(id, userId);
+}
 
     @Get(':id/dashboard')
   @UseGuards(ProjectMemberGuard)

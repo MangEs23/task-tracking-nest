@@ -70,30 +70,35 @@ export class ProjectsService {
     });
   }
 
-  async findOne(id: string) {
-    const project = await this.prisma.m_project.findUnique({
-      where: { id },
-      include: { members: { include: { user: { select: USER_SELECT } } } },
-    });
+  async findOne(id: string, userId: string) {
+  const project = await this.prisma.m_project.findUnique({
+    where: { id },
+    include: { members: { include: { user: { select: USER_SELECT } } } },
+  });
 
-    if (!project) {
-      throw new NotFoundException('Project not found');
-    }
-
-    return {
-      id: project.id,
-      name: project.name,
-      description: project.description,
-      created_by: project.created_by,
-      created_at: project.created_at,
-      members: project.members.map((m) => ({
-        user_id: m.user_id,
-        name: m.user?.name || '',
-        email: m.user?.email || '',
-        role: m.role,
-      })),
-    };
+  if (!project) {
+    throw new NotFoundException('Project not found');
   }
+
+  const myMember = project.members.find(
+    (m) => m.user_id === userId,
+  );
+
+  return {
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    created_by: project.created_by,
+    created_at: project.created_at,
+    my_role: myMember?.role ?? null,
+    members: project.members.map((m) => ({
+      user_id: m.user_id,
+      name: m.user?.name || '',
+      email: m.user?.email || '',
+      role: m.role,
+    })),
+  };
+}
 
     async getDashboard(projectId: string, dueWithin = 3) {
     // Batas "hari ini" (00:00 UTC)
@@ -192,9 +197,12 @@ export class ProjectsService {
   }
 
   async remove(id: string) {
-    await this.prisma.m_project.delete({ where: { id } });
-    return null;
-  }
+  await this.prisma.$transaction([
+    this.prisma.t_task.deleteMany({ where: { epic: { project_id: id } } }),
+    this.prisma.m_project.delete({ where: { id } }),
+  ]);
+  return null;
+}
 
   async addMember(projectId: string, dto: AddMemberDto) {
     const targetUser = await this.prisma.m_user.findUnique({
@@ -263,25 +271,34 @@ export class ProjectsService {
   }
 
   async removeMember(projectId: string, adminUserId: string, targetUserId: string) {
-    if (targetUserId === adminUserId) {
-      const adminCount = await this.prisma.t_project_member.count({
-        where: { project_id: projectId, role: 'admin' },
-      });
-      if (adminCount <= 1) {
-        throw new BadRequestException(
-          'Cannot remove yourself as the last admin of the project',
-        );
-      }
-    }
-
-    const member = await this.prisma.t_project_member.findFirst({
-      where: { project_id: projectId, user_id: targetUserId },
+  if (targetUserId === adminUserId) {
+    const adminCount = await this.prisma.t_project_member.count({
+      where: { project_id: projectId, role: 'admin' },
     });
-    if (!member) {
-      throw new NotFoundException('Member not found in this project');
+    if (adminCount <= 1) {
+      throw new BadRequestException(
+        'Cannot remove yourself as the last admin of the project',
+      );
     }
-
-    await this.prisma.t_project_member.delete({ where: { id: member.id } });
-    return null;
   }
+
+  const member = await this.prisma.t_project_member.findFirst({
+    where: { project_id: projectId, user_id: targetUserId },
+  });
+  if (!member) {
+    throw new NotFoundException('Member not found in this project');
+  }
+
+  await this.prisma.$transaction([
+    this.prisma.t_task_assignee.deleteMany({
+      where: {
+        user_id: targetUserId,
+        task: { epic: { project_id: projectId } },
+      },
+    }),
+    this.prisma.t_project_member.delete({ where: { id: member.id } }),
+  ]);
+
+  return null;
+}
 }
