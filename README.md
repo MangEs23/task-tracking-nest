@@ -101,6 +101,24 @@ docker compose down -v
 | POST   | `/auth/login`   | Public   | Login, dapat JWT        |
 | GET    | `/me`           | JWT      | Cek auth guard          |
 
+### Status task per epic
+
+`GET /projects/:projectId/epics` menyertakan `statuses` pada setiap epic:
+
+```json
+{
+  "statuses": [
+    { "id": 1, "name": "To Do", "total": 0 },
+    { "id": 2, "name": "In Progress", "total": 0 },
+    { "id": 3, "name": "Done", "total": 11 }
+  ]
+}
+```
+
+`total` adalah jumlah task dengan status tersebut di epic yang bersangkutan.
+Semua status project ditampilkan mengikuti urutannya, termasuk status dengan
+total `0`. Perhitungan memakai agregasi database tanpa mengambil seluruh task.
+
 ### Contoh login
 
 ```bash

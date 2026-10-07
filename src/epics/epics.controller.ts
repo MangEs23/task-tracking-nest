@@ -55,8 +55,12 @@ export class EpicsController {
 
   @Get('projects/:projectId/epics')
   @UseGuards(ProjectMemberGuard)
-  @ApiOperation({ summary: 'List epics of a project with progress' })
-  @ApiResponse({ status: 200, description: 'Success' })
+  @ApiOperation({ summary: 'List epics with progress and task totals per status' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Each epic includes status: [{ name, total }], ordered by project status order. Statuses without tasks have total: 0.',
+  })
   @ApiResponse({ status: 400, description: 'Invalid UUID' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
