@@ -55,7 +55,7 @@ export class EpicsService {
     });
   }
 
-    async findAllByProject(projectId: string) {
+  async findAllByProject(projectId: string) {
     return getEpicsWithProgress(this.prisma, projectId);
   }
 

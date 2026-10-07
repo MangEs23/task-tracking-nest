@@ -48,9 +48,7 @@ describe('TasksService', () => {
     created_at: new Date(),
     epic: { id: E, title: 'Epic', project_id: P },
     status: { id: S, name: 'Todo', order: 1, is_default: true, is_done: false },
-    assignees: [
-      { user: { id: OTHER, name: 'B', email: 'b@x.com' } },
-    ],
+    assignees: [{ user: { id: OTHER, name: 'B', email: 'b@x.com' } }],
     ...over,
   });
 

@@ -6,7 +6,8 @@ export class DashboardQueryDto {
   @ApiPropertyOptional({
     example: 3,
     default: 3,
-    description: 'Jumlah hari ke depan untuk menghitung task due soon (1 - 365)',
+    description:
+      'Jumlah hari ke depan untuk menghitung task due soon (1 - 365)',
   })
   @IsOptional()
   @Type(() => Number)

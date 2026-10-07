@@ -15,14 +15,22 @@ import { FilterTaskDto } from './dto/filter-task.dto';
 const TASK_INCLUDE = {
   epic: { select: { id: true, title: true, project_id: true } },
   status: {
-    select: { id: true, name: true, order: true, is_default: true, is_done: true },
+    select: {
+      id: true,
+      name: true,
+      order: true,
+      is_default: true,
+      is_done: true,
+    },
   },
   assignees: {
     include: { user: { select: { id: true, name: true, email: true } } },
   },
 } satisfies Prisma.t_taskInclude;
 
-type TaskWithRelations = Prisma.t_taskGetPayload<{ include: typeof TASK_INCLUDE }>;
+type TaskWithRelations = Prisma.t_taskGetPayload<{
+  include: typeof TASK_INCLUDE;
+}>;
 
 @Injectable()
 export class TasksService {
@@ -71,7 +79,8 @@ export class TasksService {
       where: { id: statusId, project_id: projectId },
       select: { id: true },
     });
-    if (!status) throw new BadRequestException('Invalid status for this project');
+    if (!status)
+      throw new BadRequestException('Invalid status for this project');
   }
 
   async create(epicId: string, userId: string, dto: CreateTaskDto) {
@@ -169,7 +178,10 @@ export class TasksService {
         data: { task_id: taskId, user_id: dto.user_id },
       });
     } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      if (
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
         throw new BadRequestException('User is already assigned to this task');
       }
       throw e;
