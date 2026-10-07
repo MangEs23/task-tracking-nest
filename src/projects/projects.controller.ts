@@ -1,27 +1,32 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
-  Req,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
   ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
+import { DashboardQueryDto } from './dto/dashboard-query.dto';
 import { ProjectAdminGuard } from './guards/project-admin.guard';
 import { ProjectMemberGuard } from './guards/project-member.guard';
-import { Query } from '@nestjs/common';
-import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
 @ApiTags('Projects')
 @ApiBearerAuth()
@@ -57,15 +62,18 @@ export class ProjectsController {
   @ApiResponse({ status: 403, description: 'Not a member of this project' })
   @ApiResponse({ status: 404, description: 'Project not found' })
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
-  const userId = req.user.id || req.user.sub;
-  return this.projectsService.findOne(id, userId);
-}
+    const userId = req.user.id || req.user.sub;
+    return this.projectsService.findOne(id, userId);
+  }
 
-    @Get(':id/dashboard')
+  @Get(':id/dashboard')
   @UseGuards(ProjectMemberGuard)
   @ApiOperation({ summary: 'Get project dashboard summary (aggregated)' })
   @ApiResponse({ status: 200, description: 'Success' })
-  @ApiResponse({ status: 400, description: 'Invalid UUID / invalid due_within' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid UUID / invalid due_within',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Not a member of this project' })
   getDashboard(
@@ -79,10 +87,14 @@ export class ProjectsController {
   @UseGuards(ProjectAdminGuard)
   @ApiOperation({ summary: 'Update project (Admin Only)' })
   @ApiResponse({ status: 200, description: 'Project updated successfully' })
+  @ApiResponse({ status: 400, description: 'Validation failed / empty body' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Not a member / not project admin' })
   @ApiResponse({ status: 404, description: 'Project not found' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateProjectDto) {
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateProjectDto,
+  ) {
     return this.projectsService.update(id, dto);
   }
 
@@ -103,10 +115,16 @@ export class ProjectsController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Add project member (Admin Only)' })
   @ApiResponse({ status: 201, description: 'Member added successfully' })
-  @ApiResponse({ status: 400, description: 'User is already a member of this project' })
+  @ApiResponse({
+    status: 400,
+    description: 'User is already a member of this project',
+  })
   @ApiResponse({ status: 403, description: 'Not a member / not project admin' })
   @ApiResponse({ status: 404, description: 'User not found' })
-  addMember(@Param('id', ParseUUIDPipe) projectId: string, @Body() dto: AddMemberDto) {
+  addMember(
+    @Param('id', ParseUUIDPipe) projectId: string,
+    @Body() dto: AddMemberDto,
+  ) {
     return this.projectsService.addMember(projectId, dto);
   }
 
@@ -130,7 +148,10 @@ export class ProjectsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove member from project (Admin Only)' })
   @ApiResponse({ status: 204, description: 'Member removed successfully' })
-  @ApiResponse({ status: 400, description: 'Cannot remove yourself as the last admin' })
+  @ApiResponse({
+    status: 400,
+    description: 'Cannot remove yourself as the last admin',
+  })
   @ApiResponse({ status: 403, description: 'Not a member / not project admin' })
   @ApiResponse({ status: 404, description: 'Member not found in this project' })
   removeMember(
@@ -139,6 +160,10 @@ export class ProjectsController {
     @Req() req: any,
   ) {
     const adminUserId = req.user.id || req.user.sub;
-    return this.projectsService.removeMember(projectId, adminUserId, targetUserId);
+    return this.projectsService.removeMember(
+      projectId,
+      adminUserId,
+      targetUserId,
+    );
   }
 }
