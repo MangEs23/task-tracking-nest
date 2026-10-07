@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional } from 'class-validator';
 
 export enum ProjectRole {
@@ -11,6 +12,9 @@ export class AddMemberDto {
     example: 'anggota.baru@example.com',
     description: 'Email user yang akan ditambahkan ke proyek',
   })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toLowerCase() : value,
+  )
   @IsEmail({}, { message: 'Format email tidak valid' })
   @IsNotEmpty({ message: 'Email tidak boleh kosong' })
   email: string;
