@@ -50,7 +50,9 @@ describe('Epic guards', () => {
 
     it('epic tidak ada → 404', async () => {
       prisma.t_epic.findUnique.mockResolvedValue(null);
-      await expect(guard.canActivate(ctx())).rejects.toBeInstanceOf(NotFoundException);
+      await expect(guard.canActivate(ctx())).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
 
     it('id bukan UUID → 400', async () => {
@@ -78,7 +80,9 @@ describe('Epic guards', () => {
 
     it('non-member → 403 NOT_MEMBER', async () => {
       prisma.t_project_member.findFirst.mockResolvedValue(null);
-      await expect(guard.canActivate(ctx())).rejects.toThrow(AUTH_MESSAGES.NOT_MEMBER);
+      await expect(guard.canActivate(ctx())).rejects.toThrow(
+        AUTH_MESSAGES.NOT_MEMBER,
+      );
     });
 
     it('admin → lolos', async () => {

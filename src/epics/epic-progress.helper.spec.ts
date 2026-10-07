@@ -1,4 +1,19 @@
-import { getEpicsWithProgress } from './epic-progress.helper';
+import { calcProgress, getEpicsWithProgress } from './epic-progress.helper';
+
+describe('calcProgress', () => {
+  it('0 task → 0', () => {
+    expect(calcProgress(0, 0)).toBe(0);
+  });
+
+  it.each([
+    [1, 3, 33],
+    [2, 3, 67],
+    [3, 3, 100],
+    [0, 5, 0],
+  ])('%i dari %i → %i', (done, total, expected) => {
+    expect(calcProgress(done, total)).toBe(expected);
+  });
+});
 
 describe('getEpicsWithProgress', () => {
   const prisma = {
@@ -51,10 +66,10 @@ describe('getEpicsWithProgress', () => {
         task_total: 11,
         task_done: 11,
         progress: 100,
-        status: [
-          { name: 'To Do', total: 0 },
-          { name: 'In Progress', total: 0 },
-          { name: 'Done', total: 11 },
+        statuses: [
+          { id: 'todo', name: 'To Do', total: 0 },
+          { id: 'doing', name: 'In Progress', total: 0 },
+          { id: 'done', name: 'Done', total: 11 },
         ],
       },
       {
@@ -62,10 +77,10 @@ describe('getEpicsWithProgress', () => {
         task_total: 12,
         task_done: 4,
         progress: 33,
-        status: [
-          { name: 'To Do', total: 8 },
-          { name: 'In Progress', total: 0 },
-          { name: 'Done', total: 4 },
+        statuses: [
+          { id: 'todo', name: 'To Do', total: 8 },
+          { id: 'doing', name: 'In Progress', total: 0 },
+          { id: 'done', name: 'Done', total: 4 },
         ],
       },
       {
@@ -73,10 +88,10 @@ describe('getEpicsWithProgress', () => {
         task_total: 0,
         task_done: 0,
         progress: 0,
-        status: [
-          { name: 'To Do', total: 0 },
-          { name: 'In Progress', total: 0 },
-          { name: 'Done', total: 0 },
+        statuses: [
+          { id: 'todo', name: 'To Do', total: 0 },
+          { id: 'doing', name: 'In Progress', total: 0 },
+          { id: 'done', name: 'Done', total: 0 },
         ],
       },
     ]);
@@ -114,10 +129,59 @@ describe('getEpicsWithProgress', () => {
       task_total: 5,
       task_done: 5,
       progress: 100,
-      status: [
-        { name: 'Done', total: 2 },
-        { name: 'Done', total: 3 },
+      statuses: [
+        { id: 's1', name: 'Done', total: 2 },
+        { id: 's2', name: 'Done', total: 3 },
       ],
     });
+  });
+
+  it('menghitung total, done, dan progress termasuk epic tanpa task selesai', async () => {
+    prisma.t_epic.findMany.mockResolvedValue([
+      epic('e1'),
+      epic('e2'),
+      epic('e3'),
+    ]);
+    prisma.r_status.findMany.mockResolvedValue([
+      { id: 'todo', name: 'To Do', is_done: false },
+      { id: 'done', name: 'Done', is_done: true },
+    ]);
+    prisma.t_task.groupBy.mockResolvedValue([
+      { epic_id: 'e1', status_id: 'todo', _count: { _all: 3 } },
+      { epic_id: 'e1', status_id: 'done', _count: { _all: 1 } },
+      { epic_id: 'e2', status_id: 'todo', _count: { _all: 3 } },
+    ]);
+
+    const result = await getEpicsWithProgress(prisma as any, 'p1');
+
+    expect(result[0]).toMatchObject({
+      task_total: 4,
+      task_done: 1,
+      progress: 25,
+    });
+    expect(result[1]).toMatchObject({
+      task_total: 3,
+      task_done: 0,
+      progress: 0,
+      statuses: [
+        { id: 'todo', name: 'To Do', total: 3 },
+        { id: 'done', name: 'Done', total: 0 },
+      ],
+    });
+    expect(result[2]).toMatchObject({
+      task_total: 0,
+      task_done: 0,
+      progress: 0,
+    });
+  });
+
+  it('query epic difilter per project dan diurutkan start_date', async () => {
+    prisma.t_epic.findMany.mockResolvedValue([]);
+
+    await getEpicsWithProgress(prisma as any, 'p1');
+
+    const arg = prisma.t_epic.findMany.mock.calls[0][0];
+    expect(arg.where).toEqual({ project_id: 'p1' });
+    expect(arg.orderBy).toEqual({ start_date: 'asc' });
   });
 });

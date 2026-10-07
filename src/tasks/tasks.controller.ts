@@ -11,14 +11,19 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { TasksService } from './tasks.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { AssignUserDto } from './dto/assign-user.dto';
 import { FilterTaskDto } from './dto/filter-task.dto';
-import { UseGuards } from '@nestjs/common';
 import { ProjectMemberGuard } from '../projects/guards/project-member.guard';
 
 @ApiTags('Tasks')
@@ -31,7 +36,10 @@ export class TasksController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Buat task baru di dalam Epic' })
   @ApiResponse({ status: 201, description: 'Task berhasil dibuat' })
-  @ApiResponse({ status: 400, description: 'Status ID invalid / Status default belum diatur' })
+  @ApiResponse({
+    status: 400,
+    description: 'Status ID invalid / Status default belum diatur',
+  })
   @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
   @ApiResponse({ status: 404, description: 'Epic tidak ditemukan' })
   create(
@@ -61,18 +69,20 @@ export class TasksController {
   @ApiResponse({ status: 200, description: 'Berhasil mengambil detail task' })
   @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
   @ApiResponse({ status: 404, description: 'Task tidak ditemukan' })
-  findOne(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: any,
-  ) {
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     const userId = req.user.id || req.user.sub;
     return this.tasksService.findOne(id, userId);
   }
 
   @Patch('tasks/:id')
-  @ApiOperation({ summary: 'Update task (title, description, priority, due_date, status_id)' })
+  @ApiOperation({
+    summary: 'Update task (title, description, priority, due_date, status_id)',
+  })
   @ApiResponse({ status: 200, description: 'Task berhasil diperbarui' })
-  @ApiResponse({ status: 400, description: 'Status ID tidak terdaftar di proyek ini' })
+  @ApiResponse({
+    status: 400,
+    description: 'Status ID tidak terdaftar di proyek ini',
+  })
   @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
   @ApiResponse({ status: 404, description: 'Task tidak ditemukan' })
   update(
@@ -90,10 +100,7 @@ export class TasksController {
   @ApiResponse({ status: 204, description: 'Task berhasil dihapus' })
   @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
   @ApiResponse({ status: 404, description: 'Task tidak ditemukan' })
-  remove(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Req() req: any,
-  ) {
+  remove(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
     const userId = req.user.id || req.user.sub;
     return this.tasksService.remove(id, userId);
   }
@@ -102,7 +109,10 @@ export class TasksController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Assign user (member proyek) ke task' })
   @ApiResponse({ status: 201, description: 'User berhasil di-assign' })
-  @ApiResponse({ status: 400, description: 'User bukan member proyek / User sudah di-assign' })
+  @ApiResponse({
+    status: 400,
+    description: 'User bukan member proyek / User sudah di-assign',
+  })
   @ApiResponse({ status: 403, description: 'Anda bukan anggota proyek ini' })
   @ApiResponse({ status: 404, description: 'Task tidak ditemukan' })
   assignUser(
@@ -131,7 +141,9 @@ export class TasksController {
 
   @Get('projects/:projectId/tasks')
   @UseGuards(ProjectMemberGuard)
-  @ApiOperation({ summary: 'List task lintas-epic dengan filter (Board/List View)' })
+  @ApiOperation({
+    summary: 'List task lintas-epic dengan filter (Board/List View)',
+  })
   @ApiResponse({ status: 200, description: 'Success' })
   @ApiResponse({ status: 400, description: 'Invalid filter / UUID' })
   @ApiResponse({ status: 403, description: 'Not a member of this project' })

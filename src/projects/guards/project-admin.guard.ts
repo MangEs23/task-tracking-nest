@@ -26,7 +26,9 @@ export class ProjectAdminGuard implements CanActivate {
     const projectId = request.params.projectId || request.params.id;
 
     if (!projectId) {
-      throw new NotFoundException('Project ID tidak ditemukan pada parameter URL');
+      throw new NotFoundException(
+        'Project ID tidak ditemukan pada parameter URL',
+      );
     }
     if (!isUUID(projectId)) {
       throw new BadRequestException('Validation failed (uuid is expected)');
