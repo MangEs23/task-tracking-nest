@@ -158,7 +158,6 @@ export class StatusesService {
         where: { id },
         data: {
           ...(dto.name !== undefined && { name: dto.name }),
-          ...(dto.order !== undefined && { order: dto.order }),
           ...(dto.is_default !== undefined && {
             is_default: dto.is_default,
           }),
