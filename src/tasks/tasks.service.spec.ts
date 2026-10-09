@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -16,6 +17,8 @@ const OTHER = 'user-other';
 
 describe('TasksService', () => {
   const prisma = {
+    $transaction: jest.fn(),
+
     t_epic: { findUnique: jest.fn() },
     t_task: {
       create: jest.fn(),
@@ -57,7 +60,14 @@ describe('TasksService', () => {
   const asNonMember = () =>
     prisma.t_project_member.findFirst.mockResolvedValue(null);
 
-  beforeEach(() => jest.resetAllMocks());
+  beforeEach(() => {
+  jest.resetAllMocks();
+
+  prisma.$transaction.mockImplementation(
+    (operation: (tx: typeof prisma) => Promise<unknown>) =>
+      operation(prisma),
+  );
+});
 
   describe('create', () => {
     const dto = { title: 'Task', priority: 'High' } as any;
@@ -288,6 +298,184 @@ describe('TasksService', () => {
       );
       expect(prisma.t_task_assignee.create).not.toHaveBeenCalled();
     });
+
+    it('task tidak ditemukan → 404', async () => {
+  prisma.t_task.findUnique.mockResolvedValue(null);
+
+  await expect(
+    service.assignUser(T, ME, dto),
+  ).rejects.toBeInstanceOf(NotFoundException);
+
+  expect(prisma.t_task_assignee.create).not.toHaveBeenCalled();
+});
+
+it('caller bukan member → 403', async () => {
+  prisma.t_task.findUnique.mockResolvedValue(task());
+  prisma.t_project_member.findFirst.mockResolvedValue(null);
+
+  await expect(
+    service.assignUser(T, ME, dto),
+  ).rejects.toBeInstanceOf(ForbiddenException);
+
+  expect(prisma.t_task_assignee.create).not.toHaveBeenCalled();
+});
+
+it('memakai transaksi Serializable dan memeriksa project yang sama', async () => {
+  prisma.t_task.findUnique.mockResolvedValue(task());
+
+  prisma.t_project_member.findFirst
+    .mockResolvedValueOnce({ role: 'member' })
+    .mockResolvedValueOnce(targetMember);
+
+  prisma.t_task_assignee.create.mockResolvedValue({});
+
+  await service.assignUser(T, ME, dto);
+
+  expect(prisma.$transaction).toHaveBeenCalledWith(
+    expect.any(Function),
+    {
+      isolationLevel:
+        Prisma.TransactionIsolationLevel.Serializable,
+    },
+  );
+
+  expect(
+    prisma.t_project_member.findFirst,
+  ).toHaveBeenNthCalledWith(1, {
+    where: {
+      project_id: P,
+      user_id: ME,
+    },
+  });
+
+  expect(
+    prisma.t_project_member.findFirst,
+  ).toHaveBeenNthCalledWith(2, {
+    where: {
+      project_id: P,
+      user_id: OTHER,
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        },
+      },
+    },
+  });
+});
+
+it('target sudah dihapus setelah konflik → retry menolak assignment', async () => {
+  prisma.t_task.findUnique.mockResolvedValue(task());
+
+  prisma.t_project_member.findFirst
+    // Percobaan pertama: caller dan target masih member.
+    .mockResolvedValueOnce({ role: 'member' })
+    .mockResolvedValueOnce(targetMember)
+    // Percobaan kedua: target sudah dihapus.
+    .mockResolvedValueOnce({ role: 'member' })
+    .mockResolvedValueOnce(null);
+
+  prisma.t_task_assignee.create.mockRejectedValueOnce(
+    new Prisma.PrismaClientKnownRequestError(
+      'Serialization conflict',
+      {
+        code: 'P2034',
+        clientVersion: 'test',
+      },
+    ),
+  );
+
+  await expect(
+    service.assignUser(T, ME, dto),
+  ).rejects.toThrow('User is not a member of this project');
+
+  expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  expect(prisma.t_task.findUnique).toHaveBeenCalledTimes(2);
+
+  // Percobaan kedua berhenti sebelum insert.
+  expect(prisma.t_task_assignee.create).toHaveBeenCalledTimes(1);
+});
+
+it('caller sudah dihapus setelah konflik → retry ditolak 403', async () => {
+  prisma.t_task.findUnique.mockResolvedValue(task());
+
+  prisma.t_project_member.findFirst
+    .mockResolvedValueOnce({ role: 'member' })
+    .mockResolvedValueOnce(targetMember)
+    // Caller tidak lagi member pada percobaan kedua.
+    .mockResolvedValueOnce(null);
+
+  prisma.t_task_assignee.create.mockRejectedValueOnce(
+    new Prisma.PrismaClientKnownRequestError(
+      'Serialization conflict',
+      {
+        code: 'P2034',
+        clientVersion: 'test',
+      },
+    ),
+  );
+
+  await expect(
+    service.assignUser(T, ME, dto),
+  ).rejects.toBeInstanceOf(ForbiddenException);
+
+  expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+  expect(prisma.t_task_assignee.create).toHaveBeenCalledTimes(1);
+});
+
+it('konflik sekali lalu berhasil pada percobaan kedua', async () => {
+  prisma.t_task.findUnique.mockResolvedValue(task());
+
+  prisma.t_project_member.findFirst
+    .mockResolvedValueOnce({ role: 'member' })
+    .mockResolvedValueOnce(targetMember)
+    .mockResolvedValueOnce({ role: 'member' })
+    .mockResolvedValueOnce(targetMember);
+
+  prisma.t_task_assignee.create
+    .mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError(
+        'Serialization conflict',
+        {
+          code: 'P2034',
+          clientVersion: 'test',
+        },
+      ),
+    )
+    .mockResolvedValueOnce({});
+
+  await expect(
+    service.assignUser(T, ME, dto),
+  ).resolves.toEqual({
+    task_id: T,
+    id: OTHER,
+    name: 'B',
+    email: 'b@x.com',
+  });
+
+  expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+});
+
+it('konflik terus-menerus → 409 setelah tiga percobaan', async () => {
+  prisma.$transaction.mockRejectedValue(
+    new Prisma.PrismaClientKnownRequestError(
+      'Serialization conflict',
+      {
+        code: 'P2034',
+        clientVersion: 'test',
+      },
+    ),
+  );
+
+  await expect(
+    service.assignUser(T, ME, dto),
+  ).rejects.toBeInstanceOf(ConflictException);
+
+  expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+});
 
     it('sudah di-assign (unique violation P2002) → 400', async () => {
       prisma.t_task.findUnique.mockResolvedValue(task());

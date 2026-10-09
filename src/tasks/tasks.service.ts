@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -162,38 +163,103 @@ export class TasksService {
     return null;
   }
 
-  async assignUser(taskId: string, callerId: string, dto: AssignUserDto) {
-    const task = await this.getTaskAndAssertMember(taskId, callerId);
-
-    const target = await this.prisma.t_project_member.findFirst({
-      where: { project_id: task.epic.project_id, user_id: dto.user_id },
-      include: { user: { select: { id: true, name: true, email: true } } },
-    });
-    if (!target) {
-      throw new BadRequestException('User is not a member of this project');
-    }
-
+  async assignUser(
+  taskId: string,
+  callerId: string,
+  dto: AssignUserDto,
+) {
+  for (let attempt = 0; ; attempt++) {
     try {
-      await this.prisma.t_task_assignee.create({
-        data: { task_id: taskId, user_id: dto.user_id },
-      });
-    } catch (e) {
-      if (
-        e instanceof Prisma.PrismaClientKnownRequestError &&
-        e.code === 'P2002'
-      ) {
-        throw new BadRequestException('User is already assigned to this task');
-      }
-      throw e;
-    }
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const task = await tx.t_task.findUnique({
+            where: { id: taskId },
+            select: {
+              epic: {
+                select: { project_id: true },
+              },
+            },
+          });
 
-    return {
-      task_id: taskId,
-      id: target.user.id,
-      name: target.user.name,
-      email: target.user.email,
-    };
+          if (!task) {
+            throw new NotFoundException('Task not found');
+          }
+
+          const projectId = task.epic.project_id;
+
+          const caller = await tx.t_project_member.findFirst({
+            where: {
+              project_id: projectId,
+              user_id: callerId,
+            },
+          });
+
+          if (!caller) {
+            throw new ForbiddenException(AUTH_MESSAGES.NOT_MEMBER);
+          }
+
+          const target = await tx.t_project_member.findFirst({
+            where: {
+              project_id: projectId,
+              user_id: dto.user_id,
+            },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                },
+              },
+            },
+          });
+
+          if (!target) {
+            throw new BadRequestException(
+              'User is not a member of this project',
+            );
+          }
+
+          await tx.t_task_assignee.create({
+            data: {
+              task_id: taskId,
+              user_id: dto.user_id,
+            },
+          });
+
+          return {
+            task_id: taskId,
+            id: target.user.id,
+            name: target.user.name,
+            email: target.user.email,
+          };
+        },
+        {
+          isolationLevel:
+            Prisma.TransactionIsolationLevel.Serializable,
+        },
+      );
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new BadRequestException(
+            'User is already assigned to this task',
+          );
+        }
+
+        if (error.code === 'P2034') {
+          if (attempt < 2) continue;
+
+          throw new ConflictException(
+            'Task or project members changed concurrently, please retry',
+          );
+        }
+      }
+
+      throw error;
+    }
   }
+}
 
   async unassignUser(taskId: string, callerId: string, targetUserId: string) {
     await this.getTaskAndAssertMember(taskId, callerId);

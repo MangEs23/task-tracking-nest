@@ -62,6 +62,7 @@ model t_epic {
   project m_project @relation(fields: [project_id], references: [id], onDelete: Cascade)
   tasks   t_task[]
 
+  @@index([project_id])
   @@map("t_epic")
 }
 
@@ -93,6 +94,8 @@ model t_task {
   status    r_status          @relation(fields: [status_id], references: [id])
   assignees t_task_assignee[]
 
+  @@index([epic_id])
+  @@index([status_id])
   @@map("t_task")
 }
 

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -11,7 +12,8 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { UpdateMemberRoleDto } from './dto/update-member-role.dto';
-import { getEpicsWithProgress } from '../epics/epic-progress.helper';
+import { calcProgress, getEpicsWithProgress } from '../epics/epic-progress.helper';
+
 
 const PROJECT_SELECT = {
   id: true,
@@ -23,11 +25,52 @@ const PROJECT_SELECT = {
 
 const USER_SELECT = { id: true, name: true, email: true } as const;
 
+type ProjectListRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  my_role: string;
+  member_count: bigint;
+  created_at: Date;
+  epic_count: bigint;
+  task_total: bigint;
+  task_done: bigint;
+  members_preview: Array<{
+    user_id: string;
+    name: string;
+  }>;
+};
+
 @Injectable()
 export class ProjectsService {
   private readonly logger = new Logger(ProjectsService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  private async mutateMembers<T>(
+  operation: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await this.prisma.$transaction(operation, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2034'
+      ) {
+        if (attempt < 2) continue;
+
+        throw new ConflictException(
+          'Project members changed concurrently, please retry',
+        );
+      }
+
+      throw error;
+    }
+  }
+}
 
   async create(userId: string, dto: CreateProjectDto) {
     try {
@@ -59,24 +102,124 @@ export class ProjectsService {
   }
 
   async findAll(userId: string) {
-    const projects = await this.prisma.m_project.findMany({
-      where: { members: { some: { user_id: userId } } },
-      include: { members: { select: { user_id: true, role: true } } },
-      orderBy: { created_at: 'desc' },
-    });
+  const projects = await this.prisma.$queryRaw<ProjectListRow[]>`
+    WITH visible_projects AS (
+      SELECT
+        p.id,
+        p.name,
+        p.description,
+        p.created_at,
+        pm.role AS my_role
+      FROM m_project p
+      JOIN t_project_member pm
+        ON pm.project_id = p.id
+      WHERE pm.user_id = CAST(${userId} AS uuid)
+    ),
+    epic_counts AS (
+      SELECT
+        e.project_id,
+        COUNT(*) AS epic_count
+      FROM t_epic e
+      JOIN visible_projects vp
+        ON vp.id = e.project_id
+      GROUP BY e.project_id
+    ),
+    task_counts AS (
+      SELECT
+        e.project_id,
+        COUNT(*) AS task_total,
+        COUNT(*) FILTER (
+          WHERE s.is_done = TRUE
+        ) AS task_done
+      FROM t_task t
+      JOIN t_epic e
+        ON e.id = t.epic_id
+      JOIN visible_projects vp
+        ON vp.id = e.project_id
+      LEFT JOIN r_status s
+        ON s.id = t.status_id
+      GROUP BY e.project_id
+    ),
+    member_counts AS (
+      SELECT
+        pm.project_id,
+        COUNT(*) AS member_count
+      FROM t_project_member pm
+      JOIN visible_projects vp
+        ON vp.id = pm.project_id
+      GROUP BY pm.project_id
+    ),
+    ranked_members AS (
+      SELECT
+        pm.project_id,
+        pm.user_id,
+        u.name,
+        ROW_NUMBER() OVER (
+          PARTITION BY pm.project_id
+          ORDER BY pm.user_id ASC
+        ) AS position
+      FROM t_project_member pm
+      JOIN visible_projects vp
+        ON vp.id = pm.project_id
+      JOIN m_user u
+        ON u.id = pm.user_id
+    ),
+    member_previews AS (
+      SELECT
+        project_id,
+        JSONB_AGG(
+          JSONB_BUILD_OBJECT(
+            'user_id', user_id,
+            'name', name
+          )
+          ORDER BY position
+        ) AS members_preview
+      FROM ranked_members
+      WHERE position <= 4
+      GROUP BY project_id
+    )
+    SELECT
+      vp.id,
+      vp.name,
+      vp.description,
+      vp.my_role,
+      vp.created_at,
+      COALESCE(mc.member_count, 0::bigint) AS member_count,
+      COALESCE(ec.epic_count, 0::bigint) AS epic_count,
+      COALESCE(tc.task_total, 0::bigint) AS task_total,
+      COALESCE(tc.task_done, 0::bigint) AS task_done,
+      COALESCE(mp.members_preview, '[]'::jsonb) AS members_preview
+    FROM visible_projects vp
+    LEFT JOIN epic_counts ec
+      ON ec.project_id = vp.id
+    LEFT JOIN task_counts tc
+      ON tc.project_id = vp.id
+    LEFT JOIN member_counts mc
+      ON mc.project_id = vp.id
+    LEFT JOIN member_previews mp
+      ON mp.project_id = vp.id
+    ORDER BY vp.created_at DESC, vp.id ASC
+  `;
 
-    return projects.map((project) => {
-      const myMember = project.members.find((m) => m.user_id === userId);
-      return {
-        id: project.id,
-        name: project.name,
-        description: project.description,
-        my_role: myMember?.role || 'member',
-        member_count: project.members.length,
-        created_at: project.created_at,
-      };
-    });
-  }
+  return projects.map((project) => {
+    const taskTotal = Number(project.task_total);
+    const taskDone = Number(project.task_done);
+
+    return {
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      my_role: project.my_role,
+      member_count: Number(project.member_count),
+      created_at: project.created_at,
+      epic_count: Number(project.epic_count),
+      task_total: taskTotal,
+      task_done: taskDone,
+      progress: calcProgress(taskDone, taskTotal),
+      members_preview: project.members_preview,
+    };
+  });
+}
 
   async findOne(id: string, userId: string) {
     const project = await this.prisma.m_project.findUnique({
@@ -265,21 +408,30 @@ export class ProjectsService {
   }
 
   async updateMemberRole(
-    projectId: string,
-    targetUserId: string,
-    dto: UpdateMemberRoleDto,
-  ) {
-    const member = await this.prisma.t_project_member.findFirst({
-      where: { project_id: projectId, user_id: targetUserId },
+  projectId: string,
+  targetUserId: string,
+  dto: UpdateMemberRoleDto,
+) {
+  return this.mutateMembers(async (tx) => {
+    const member = await tx.t_project_member.findFirst({
+      where: {
+        project_id: projectId,
+        user_id: targetUserId,
+      },
     });
+
     if (!member) {
       throw new NotFoundException('Member not found in this project');
     }
 
     if (member.role === 'admin' && dto.role !== 'admin') {
-      const adminCount = await this.prisma.t_project_member.count({
-        where: { project_id: projectId, role: 'admin' },
+      const adminCount = await tx.t_project_member.count({
+        where: {
+          project_id: projectId,
+          role: 'admin',
+        },
       });
+
       if (adminCount <= 1) {
         throw new BadRequestException(
           'Cannot demote the last admin of the project',
@@ -287,10 +439,12 @@ export class ProjectsService {
       }
     }
 
-    const updated = await this.prisma.t_project_member.update({
+    const updated = await tx.t_project_member.update({
       where: { id: member.id },
       data: { role: dto.role },
-      include: { user: { select: USER_SELECT } },
+      include: {
+        user: { select: USER_SELECT },
+      },
     });
 
     return {
@@ -299,41 +453,57 @@ export class ProjectsService {
       email: updated.user.email,
       role: updated.role,
     };
-  }
+  });
+}
 
   async removeMember(
-    projectId: string,
-    adminUserId: string,
-    targetUserId: string,
-  ) {
-    if (targetUserId === adminUserId) {
-      const adminCount = await this.prisma.t_project_member.count({
-        where: { project_id: projectId, role: 'admin' },
-      });
-      if (adminCount <= 1) {
-        throw new BadRequestException(
-          'Cannot remove yourself as the last admin of the project',
-        );
-      }
-    }
-
-    const member = await this.prisma.t_project_member.findFirst({
-      where: { project_id: projectId, user_id: targetUserId },
+  projectId: string,
+  adminUserId: string,
+  targetUserId: string,
+) {
+  return this.mutateMembers(async (tx) => {
+    const member = await tx.t_project_member.findFirst({
+      where: {
+        project_id: projectId,
+        user_id: targetUserId,
+      },
     });
+
     if (!member) {
       throw new NotFoundException('Member not found in this project');
     }
 
-    await this.prisma.$transaction([
-      this.prisma.t_task_assignee.deleteMany({
+    if (member.role === 'admin') {
+      const adminCount = await tx.t_project_member.count({
         where: {
-          user_id: targetUserId,
-          task: { epic: { project_id: projectId } },
+          project_id: projectId,
+          role: 'admin',
         },
-      }),
-      this.prisma.t_project_member.delete({ where: { id: member.id } }),
-    ]);
+      });
+
+      if (adminCount <= 1) {
+        throw new BadRequestException(
+          targetUserId === adminUserId
+            ? 'Cannot remove yourself as the last admin of the project'
+            : 'Cannot remove the last admin of the project',
+        );
+      }
+    }
+
+    await tx.t_task_assignee.deleteMany({
+      where: {
+        user_id: targetUserId,
+        task: {
+          epic: { project_id: projectId },
+        },
+      },
+    });
+
+    await tx.t_project_member.delete({
+      where: { id: member.id },
+    });
 
     return null;
-  }
+  });
+}
 }

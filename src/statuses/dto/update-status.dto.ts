@@ -1,25 +1,38 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsString,
+  ValidateIf,
+} from 'class-validator';
 
 export class UpdateStatusDto {
-  @ApiPropertyOptional({ example: 'In Review', description: 'Nama status' })
-  @IsOptional()
+  @ApiPropertyOptional({
+    example: 'In Review',
+    description: 'Nama status',
+  })
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @ValidateIf((_, value) => value !== undefined)
   @IsString()
+  @IsNotEmpty({ message: 'Nama status tidak boleh kosong' })
   name?: string;
 
   @ApiPropertyOptional({
     example: true,
-    description: 'Menandakan apakah status ini status default proyek',
+    description: 'Menandakan status default project',
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsBoolean()
   is_default?: boolean;
 
   @ApiPropertyOptional({
     example: false,
-    description: 'Menandakan apakah status ini menandakan task selesai',
+    description: 'Menandakan task sudah selesai',
   })
-  @IsOptional()
+  @ValidateIf((_, value) => value !== undefined)
   @IsBoolean()
   is_done?: boolean;
 }
