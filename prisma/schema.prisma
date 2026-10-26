@@ -15,9 +15,10 @@ model m_user {
   role          String
   created_at    DateTime @default(now())
 
-  created_projects m_project[]        @relation("ProjectCreator")
-  project_members  t_project_member[]
-  task_assignees   t_task_assignee[]
+  created_projects    m_project[]            @relation("ProjectCreator")
+  project_members     t_project_member[]
+  task_assignees      t_task_assignee[]
+  created_attachments t_project_attachment[] @relation("ProjectAttachmentCreator")
 
   @@map("m_user")
 }
@@ -29,10 +30,11 @@ model m_project {
   created_by  String   @db.Uuid
   created_at  DateTime @default(now())
 
-  creator  m_user             @relation("ProjectCreator", fields: [created_by], references: [id])
-  members  t_project_member[]
-  epics    t_epic[]
-  statuses r_status[]
+  creator     m_user                 @relation("ProjectCreator", fields: [created_by], references: [id])
+  members     t_project_member[]
+  epics       t_epic[]
+  statuses    r_status[]
+  attachments t_project_attachment[]
 
   @@map("m_project")
 }
@@ -109,4 +111,22 @@ model t_task_assignee {
 
   @@unique([task_id, user_id])
   @@map("t_task_assignee")
+}
+
+model t_project_attachment {
+  id         String   @id @default(uuid()) @db.Uuid
+  project_id String   @db.Uuid
+  type       String   @default("link") @db.VarChar(20)
+  title      String   @db.VarChar(150)
+  url        String   @db.VarChar(2048)
+  created_by String   @db.Uuid
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  project m_project @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  creator m_user    @relation("ProjectAttachmentCreator", fields: [created_by], references: [id], onDelete: Restrict)
+
+  @@unique([project_id, url])
+  @@index([project_id])
+  @@map("t_project_attachment")
 }

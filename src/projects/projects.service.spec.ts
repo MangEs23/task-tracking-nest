@@ -101,6 +101,9 @@ describe('ProjectsService', () => {
       description: null,
       created_by: ADMIN,
       created_at: new Date(),
+            _count: {
+        attachments: 3,
+      },
       members: [
         {
           user_id: ADMIN,
@@ -140,6 +143,35 @@ describe('ProjectsService', () => {
         service.findOne(P, ADMIN),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
+
+        it.each([0, 3])(
+      'mengembalikan attachment_count = %i',
+      async (count) => {
+        prisma.m_project.findUnique.mockResolvedValue({
+          ...project,
+          _count: {
+            attachments: count,
+          },
+        });
+
+        const result = await service.findOne(P, ADMIN);
+
+        expect(result.attachment_count).toBe(count);
+
+        expect(prisma.m_project.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: P },
+            include: expect.objectContaining({
+              _count: {
+                select: {
+                  attachments: true,
+                },
+              },
+            }),
+          }),
+        );
+      },
+    );
   });
 
   describe('update', () => {

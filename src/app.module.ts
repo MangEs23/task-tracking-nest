@@ -10,9 +10,10 @@ import { ProjectsModule } from './projects/projects.module';
 import { EpicsModule } from './epics/epics.module';
 import { TasksModule } from './tasks/tasks.module';
 import { StatusesModule } from './statuses/statuses.module';
+import { AttachmentsModule } from './attachments/attachments.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ProjectsModule, EpicsModule, TasksModule, StatusesModule],
+  imports: [PrismaModule, AuthModule, ProjectsModule, EpicsModule, TasksModule, StatusesModule, AttachmentsModule],
   controllers: [AppController],
   providers: [
     AppService,

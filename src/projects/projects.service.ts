@@ -221,17 +221,32 @@ export class ProjectsService {
   });
 }
 
-  async findOne(id: string, userId: string) {
+    async findOne(id: string, userId: string) {
     const project = await this.prisma.m_project.findUnique({
       where: { id },
-      include: { members: { include: { user: { select: USER_SELECT } } } },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: USER_SELECT,
+            },
+          },
+        },
+        _count: {
+          select: {
+            attachments: true,
+          },
+        },
+      },
     });
 
     if (!project) {
       throw new NotFoundException('Project not found');
     }
 
-    const myMember = project.members.find((m) => m.user_id === userId);
+    const myMember = project.members.find(
+      (member) => member.user_id === userId,
+    );
 
     return {
       id: project.id,
@@ -240,11 +255,12 @@ export class ProjectsService {
       created_by: project.created_by,
       created_at: project.created_at,
       my_role: myMember?.role ?? null,
-      members: project.members.map((m) => ({
-        user_id: m.user_id,
-        name: m.user?.name || '',
-        email: m.user?.email || '',
-        role: m.role,
+      attachment_count: project._count.attachments,
+      members: project.members.map((member) => ({
+        user_id: member.user_id,
+        name: member.user?.name || '',
+        email: member.user?.email || '',
+        role: member.role,
       })),
     };
   }
