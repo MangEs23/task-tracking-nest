@@ -12,6 +12,7 @@ import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { AssignUserDto } from './dto/assign-user.dto';
 import { FilterTaskDto } from './dto/filter-task.dto';
+import { syncTaskMentions } from '../mentions/utils/sync-task-mentions';
 
 const TASK_INCLUDE = {
   epic: { select: { id: true, title: true, project_id: true } },
@@ -27,6 +28,21 @@ const TASK_INCLUDE = {
   assignees: {
     include: { user: { select: { id: true, name: true, email: true } } },
   },
+    mentions: {
+    select: {
+      user_id: true,
+      mentioned_by: true,
+      user: {
+        select: {
+          name: true,
+          email: true,
+        },
+      },
+    },
+    orderBy: {
+      user_id: 'asc',
+    },
+  },
 } satisfies Prisma.t_taskInclude;
 
 type TaskWithRelations = Prisma.t_taskGetPayload<{
@@ -37,82 +53,206 @@ type TaskWithRelations = Prisma.t_taskGetPayload<{
 export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** Bentuk output seragam: assignees = [{ id, name, email }] */
-  private format(task: TaskWithRelations) {
-    const { assignees, ...rest } = task;
+    private async mutateTask<T>(
+    operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel:
+            Prisma.TransactionIsolationLevel.Serializable,
+        });
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2034'
+        ) {
+          if (attempt < 2) {
+            continue;
+          }
+
+          throw new ConflictException(
+            'Task or project members changed concurrently, please retry',
+          );
+        }
+
+        throw error;
+      }
+    }
+  }
+
+    private format(task: TaskWithRelations) {
+    const { assignees, mentions, ...rest } = task;
+
     return {
       ...rest,
-      assignees: assignees.map((a) => ({
-        id: a.user.id,
-        name: a.user.name,
-        email: a.user.email,
+      assignees: assignees.map((assignee) => ({
+        id: assignee.user.id,
+        name: assignee.user.name,
+        email: assignee.user.email,
+      })),
+      mentions: mentions.map((mention) => ({
+        user_id: mention.user_id,
+        name: mention.user.name,
+        email: mention.user.email,
+        mentioned_by: mention.mentioned_by,
       })),
     };
   }
 
-  private async assertMember(projectId: string, userId: string) {
-    const member = await this.prisma.t_project_member.findFirst({
-      where: { project_id: projectId, user_id: userId },
+    private async assertMember(
+    projectId: string,
+    userId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const member = await db.t_project_member.findFirst({
+      where: {
+        project_id: projectId,
+        user_id: userId,
+      },
     });
-    if (!member) throw new ForbiddenException(AUTH_MESSAGES.NOT_MEMBER);
+
+    if (!member) {
+      throw new ForbiddenException(AUTH_MESSAGES.NOT_MEMBER);
+    }
+
     return member;
   }
 
-  private async getEpicAndAssertMember(epicId: string, userId: string) {
-    const epic = await this.prisma.t_epic.findUnique({ where: { id: epicId } });
-    if (!epic) throw new NotFoundException('Epic not found');
-    await this.assertMember(epic.project_id, userId);
+  private async getEpicAndAssertMember(
+    epicId: string,
+    userId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const epic = await db.t_epic.findUnique({
+      where: { id: epicId },
+    });
+
+    if (!epic) {
+      throw new NotFoundException('Epic not found');
+    }
+
+    await this.assertMember(epic.project_id, userId, db);
+
     return epic;
   }
 
-  private async getTaskAndAssertMember(taskId: string, userId: string) {
-    const task = await this.prisma.t_task.findUnique({
+  private async getTaskAndAssertMember(
+    taskId: string,
+    userId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const task = await db.t_task.findUnique({
       where: { id: taskId },
       include: TASK_INCLUDE,
     });
-    if (!task) throw new NotFoundException('Task not found');
-    await this.assertMember(task.epic.project_id, userId);
+
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+
+    await this.assertMember(
+      task.epic.project_id,
+      userId,
+      db,
+    );
+
     return task;
   }
 
-  private async assertStatusInProject(statusId: string, projectId: string) {
-    const status = await this.prisma.r_status.findFirst({
-      where: { id: statusId, project_id: projectId },
+  private async assertStatusInProject(
+    statusId: string,
+    projectId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const status = await db.r_status.findFirst({
+      where: {
+        id: statusId,
+        project_id: projectId,
+      },
       select: { id: true },
     });
-    if (!status)
-      throw new BadRequestException('Invalid status for this project');
+
+    if (!status) {
+      throw new BadRequestException(
+        'Invalid status for this project',
+      );
+    }
   }
 
-  async create(epicId: string, userId: string, dto: CreateTaskDto) {
-    const epic = await this.getEpicAndAssertMember(epicId, userId);
+    async create(
+    epicId: string,
+    userId: string,
+    dto: CreateTaskDto,
+  ) {
+    return this.mutateTask(async (tx) => {
+      const epic = await this.getEpicAndAssertMember(
+        epicId,
+        userId,
+        tx,
+      );
 
-    let statusId = dto.status_id;
-    if (statusId) {
-      await this.assertStatusInProject(statusId, epic.project_id);
-    } else {
-      const def = await this.prisma.r_status.findFirst({
-        where: { project_id: epic.project_id, is_default: true },
-        select: { id: true },
-      });
-      if (!def) {
-        throw new BadRequestException('Project has no default status');
+      let statusId = dto.status_id;
+
+      if (statusId) {
+        await this.assertStatusInProject(
+          statusId,
+          epic.project_id,
+          tx,
+        );
+      } else {
+        const defaultStatus = await tx.r_status.findFirst({
+          where: {
+            project_id: epic.project_id,
+            is_default: true,
+          },
+          select: { id: true },
+        });
+
+        if (!defaultStatus) {
+          throw new BadRequestException(
+            'Project has no default status',
+          );
+        }
+
+        statusId = defaultStatus.id;
       }
-      statusId = def.id;
-    }
 
-    const task = await this.prisma.t_task.create({
-      data: {
-        epic_id: epicId,
-        status_id: statusId,
-        title: dto.title,
-        description: dto.description ?? null,
-        priority: dto.priority,
-        due_date: dto.due_date ? new Date(dto.due_date) : null,
-      },
-      include: TASK_INCLUDE,
+      const description = dto.description ?? null;
+
+      const created = await tx.t_task.create({
+        data: {
+          epic_id: epicId,
+          status_id: statusId,
+          title: dto.title,
+          description,
+          priority: dto.priority,
+          due_date: dto.due_date
+            ? new Date(dto.due_date)
+            : null,
+        },
+        include: TASK_INCLUDE,
+      });
+
+      await syncTaskMentions(tx, {
+        taskId: created.id,
+        projectId: epic.project_id,
+        actorId: userId,
+        description,
+      });
+
+      // Ambil ulang agar respons memuat mention yang baru dibuat.
+      const result = await tx.t_task.findUnique({
+        where: { id: created.id },
+        include: TASK_INCLUDE,
+      });
+
+      if (!result) {
+        throw new NotFoundException('Task not found');
+      }
+
+      return this.format(result);
     });
-    return this.format(task);
   }
 
   async findAllByEpic(epicId: string, userId: string) {
@@ -129,36 +269,86 @@ export class TasksService {
     return this.format(await this.getTaskAndAssertMember(id, userId));
   }
 
-  async update(id: string, userId: string, dto: UpdateTaskDto) {
-    if (!Object.values(dto).some((v) => v !== undefined)) {
-      throw new BadRequestException('At least one field must be provided');
+    async update(
+    id: string,
+    userId: string,
+    dto: UpdateTaskDto,
+  ) {
+    if (!Object.values(dto).some((value) => value !== undefined)) {
+      throw new BadRequestException(
+        'At least one field must be provided',
+      );
     }
 
-    const task = await this.getTaskAndAssertMember(id, userId);
+    return this.mutateTask(async (tx) => {
+      const task = await this.getTaskAndAssertMember(
+        id,
+        userId,
+        tx,
+      );
 
-    if (dto.status_id) {
-      await this.assertStatusInProject(dto.status_id, task.epic.project_id);
-    }
+      if (dto.status_id) {
+        await this.assertStatusInProject(
+          dto.status_id,
+          task.epic.project_id,
+          tx,
+        );
+      }
 
-    const updated = await this.prisma.t_task.update({
-      where: { id },
-      data: {
-        ...(dto.title !== undefined && { title: dto.title }),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.priority !== undefined && { priority: dto.priority }),
-        ...(dto.due_date !== undefined && {
-          due_date: dto.due_date ? new Date(dto.due_date) : null,
-        }),
-        ...(dto.status_id !== undefined && { status_id: dto.status_id }),
-      },
-      include: TASK_INCLUDE,
+      const updated = await tx.t_task.update({
+        where: { id },
+        data: {
+          ...(dto.title !== undefined && {
+            title: dto.title,
+          }),
+          ...(dto.description !== undefined && {
+            description: dto.description,
+          }),
+          ...(dto.priority !== undefined && {
+            priority: dto.priority,
+          }),
+          ...(dto.due_date !== undefined && {
+            due_date: dto.due_date
+              ? new Date(dto.due_date)
+              : null,
+          }),
+          ...(dto.status_id !== undefined && {
+            status_id: dto.status_id,
+          }),
+        },
+        include: TASK_INCLUDE,
+      });
+
+      const descriptionChanged =
+        dto.description !== undefined &&
+        dto.description !== task.description;
+
+      if (!descriptionChanged) {
+        return this.format(updated);
+      }
+
+      await syncTaskMentions(tx, {
+        taskId: id,
+        projectId: task.epic.project_id,
+        actorId: userId,
+        description: dto.description ?? null,
+      });
+
+      const result = await tx.t_task.findUnique({
+        where: { id },
+        include: TASK_INCLUDE,
+      });
+
+      if (!result) {
+        throw new NotFoundException('Task not found');
+      }
+
+      return this.format(result);
     });
-    return this.format(updated);
   }
 
   async remove(id: string, userId: string) {
     await this.getTaskAndAssertMember(id, userId);
-    // t_task_assignee ikut terhapus via onDelete: Cascade
     await this.prisma.t_task.delete({ where: { id } });
     return null;
   }
@@ -277,7 +467,6 @@ export class TasksService {
   }
 
   async findAllByProject(projectId: string, userId: string, f: FilterTaskDto) {
-    // Keanggotaan sudah dicek oleh ProjectMemberGuard di controller
     const where: Prisma.t_taskWhereInput = { epic: { project_id: projectId } };
 
     if (f.status) where.status_id = f.status;
@@ -286,6 +475,17 @@ export class TasksService {
     if (f.assignee) {
       const assigneeId = f.assignee === 'me' ? userId : f.assignee;
       where.assignees = { some: { user_id: assigneeId } };
+    }
+
+    if (f.mentioned) {
+      const mentionedUserId =
+        f.mentioned === 'me' ? userId : f.mentioned;
+
+      where.mentions = {
+        some: {
+          user_id: mentionedUserId,
+        },
+      };
     }
 
     if (f.due_before) {

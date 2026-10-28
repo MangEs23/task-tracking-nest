@@ -19,6 +19,8 @@ model m_user {
   project_members     t_project_member[]
   task_assignees      t_task_assignee[]
   created_attachments t_project_attachment[] @relation("ProjectAttachmentCreator")
+  received_mentions   t_task_mention[]       @relation("TaskMentionRecipient")
+  sent_mentions       t_task_mention[]       @relation("TaskMentionAuthor")
 
   @@map("m_user")
 }
@@ -95,6 +97,7 @@ model t_task {
   epic      t_epic            @relation(fields: [epic_id], references: [id], onDelete: Cascade)
   status    r_status          @relation(fields: [status_id], references: [id])
   assignees t_task_assignee[]
+  mentions  t_task_mention[]
 
   @@index([epic_id])
   @@index([status_id])
@@ -129,4 +132,21 @@ model t_project_attachment {
   @@unique([project_id, url])
   @@index([project_id])
   @@map("t_project_attachment")
+}
+
+model t_task_mention {
+  id           String    @id @default(uuid()) @db.Uuid
+  task_id      String    @db.Uuid
+  user_id      String    @db.Uuid
+  mentioned_by String    @db.Uuid
+  read_at      DateTime?
+  created_at   DateTime  @default(now())
+
+  task   t_task @relation(fields: [task_id], references: [id], onDelete: Cascade)
+  user   m_user @relation("TaskMentionRecipient", fields: [user_id], references: [id], onDelete: Restrict)
+  author m_user @relation("TaskMentionAuthor", fields: [mentioned_by], references: [id], onDelete: Restrict)
+
+  @@unique([task_id, user_id])
+  @@index([user_id, read_at])
+  @@map("t_task_mention")
 }

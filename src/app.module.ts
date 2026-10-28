@@ -11,9 +11,19 @@ import { EpicsModule } from './epics/epics.module';
 import { TasksModule } from './tasks/tasks.module';
 import { StatusesModule } from './statuses/statuses.module';
 import { AttachmentsModule } from './attachments/attachments.module';
+import { MentionsModule } from './mentions/mentions.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ProjectsModule, EpicsModule, TasksModule, StatusesModule, AttachmentsModule],
+    imports: [
+    PrismaModule,
+    AuthModule,
+    ProjectsModule,
+    EpicsModule,
+    TasksModule,
+    StatusesModule,
+    AttachmentsModule,
+    MentionsModule,
+  ],
   controllers: [AppController],
   providers: [
     AppService,

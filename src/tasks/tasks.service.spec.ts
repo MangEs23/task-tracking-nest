@@ -27,7 +27,15 @@ describe('TasksService', () => {
       update: jest.fn(),
       delete: jest.fn(),
     },
-    t_project_member: { findFirst: jest.fn() },
+    t_project_member: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    t_task_mention: {
+      findMany: jest.fn(),
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
     r_status: { findFirst: jest.fn() },
     t_task_assignee: {
       create: jest.fn(),
@@ -52,6 +60,7 @@ describe('TasksService', () => {
     epic: { id: E, title: 'Epic', project_id: P },
     status: { id: S, name: 'Todo', order: 1, is_default: true, is_done: false },
     assignees: [{ user: { id: OTHER, name: 'B', email: 'b@x.com' } }],
+    mentions: [],
     ...over,
   });
 
@@ -60,14 +69,25 @@ describe('TasksService', () => {
   const asNonMember = () =>
     prisma.t_project_member.findFirst.mockResolvedValue(null);
 
-  beforeEach(() => {
-  jest.resetAllMocks();
+    beforeEach(() => {
+    jest.resetAllMocks();
 
-  prisma.$transaction.mockImplementation(
-    (operation: (tx: typeof prisma) => Promise<unknown>) =>
-      operation(prisma),
-  );
-});
+    prisma.$transaction.mockImplementation(
+      (operation: (tx: typeof prisma) => Promise<unknown>) =>
+        operation(prisma),
+    );
+
+    prisma.t_task_mention.findMany.mockResolvedValue([]);
+    prisma.t_task_mention.deleteMany.mockResolvedValue({
+      count: 0,
+    });
+    prisma.t_task_mention.createMany.mockResolvedValue({
+      count: 0,
+    });
+    prisma.t_project_member.findMany.mockResolvedValue([]);
+
+    prisma.t_task.findUnique.mockResolvedValue(task());
+  });
 
   describe('create', () => {
     const dto = { title: 'Task', priority: 'High' } as any;
@@ -580,6 +600,258 @@ it('konflik terus-menerus → 409 setelah tiga percobaan', async () => {
     it('due_before ISO datetime → dipakai apa adanya', async () => {
       const where = await run({ due_before: '2026-10-15T10:00:00.000Z' });
       expect(where.due_date.lte).toEqual(new Date('2026-10-15T10:00:00.000Z'));
+    });
+  });
+
+  describe('task mentions integration', () => {
+    const mention = {
+      user_id: OTHER,
+      mentioned_by: ME,
+      user: {
+        name: 'Nama terbaru',
+        email: 'b@x.com',
+      },
+    };
+
+    beforeEach(() => {
+      asMember();
+      prisma.t_epic.findUnique.mockResolvedValue(epic);
+      prisma.r_status.findFirst.mockResolvedValue({ id: S });
+      prisma.t_task.create.mockResolvedValue(task());
+      prisma.t_task.update.mockResolvedValue(task());
+    });
+
+    it('create menyimpan mention dan mengembalikannya dalam respons', async () => {
+      prisma.t_project_member.findMany.mockResolvedValue([
+        { user_id: OTHER },
+      ]);
+
+      prisma.t_task.findUnique.mockResolvedValue(
+        task({
+          description: 'Tolong cek @b@x.com',
+          mentions: [mention],
+        }),
+      );
+
+      const result = await service.create(E, ME, {
+        title: 'Task mention',
+        priority: 'Medium',
+        description: 'Tolong cek @b@x.com',
+      } as any);
+
+      expect(prisma.t_task_mention.createMany).toHaveBeenCalledWith({
+        data: [
+          {
+            task_id: T,
+            user_id: OTHER,
+            mentioned_by: ME,
+            read_at: null,
+          },
+        ],
+      });
+
+      expect(result.mentions).toEqual([
+        {
+          user_id: OTHER,
+          name: 'Nama terbaru',
+          email: 'b@x.com',
+          mentioned_by: ME,
+        },
+      ]);
+
+      expect(prisma.$transaction).toHaveBeenCalledWith(
+        expect.any(Function),
+        {
+          isolationLevel:
+            Prisma.TransactionIsolationLevel.Serializable,
+        },
+      );
+    });
+
+    it('PATCH judul saja tidak menyinkronkan mention', async () => {
+      await service.update(T, ME, { title: 'Judul baru' });
+
+      expect(prisma.t_task_mention.findMany).not.toHaveBeenCalled();
+      expect(prisma.t_task_mention.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.t_task_mention.createMany).not.toHaveBeenCalled();
+    });
+
+    it('PATCH deskripsi identik tidak menyinkronkan mention', async () => {
+      const description = 'Tolong cek @b@x.com';
+
+      prisma.t_task.findUnique.mockResolvedValue(
+        task({ description, mentions: [mention] }),
+      );
+
+      await service.update(T, ME, { description });
+
+      expect(prisma.t_task_mention.findMany).not.toHaveBeenCalled();
+    });
+
+    it('PATCH deskripsi null menghapus mention lama', async () => {
+      prisma.t_task.findUnique
+        .mockResolvedValueOnce(
+          task({
+            description: 'Tolong cek @b@x.com',
+            mentions: [mention],
+          }),
+        )
+        .mockResolvedValueOnce(
+          task({ description: null, mentions: [] }),
+        );
+
+      prisma.t_task_mention.findMany.mockResolvedValue([
+        {
+          id: 'mention-old',
+          user_id: OTHER,
+          user: { email: 'b@x.com' },
+        },
+      ]);
+
+      const result = await service.update(T, ME, {
+        description: null,
+      });
+
+      expect(prisma.t_task_mention.deleteMany).toHaveBeenCalledWith({
+        where: {
+          task_id: T,
+          id: { in: ['mention-old'] },
+        },
+      });
+
+      expect(result.description).toBeNull();
+      expect(result.mentions).toEqual([]);
+    });
+
+    it('kegagalan sinkronisasi diteruskan keluar transaksi', async () => {
+      const failure = new Error('Mention insert failed');
+
+      prisma.t_project_member.findMany.mockResolvedValue([
+        { user_id: OTHER },
+      ]);
+      prisma.t_task_mention.createMany.mockRejectedValue(failure);
+
+      await expect(
+        service.create(E, ME, {
+          title: 'Task mention',
+          priority: 'Medium',
+          description: '@b@x.com',
+        } as any),
+      ).rejects.toBe(failure);
+
+      // Respons tidak dibaca setelah sinkronisasi gagal.
+      expect(prisma.t_task.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('retry memeriksa ulang membership sebelum menulis task', async () => {
+      prisma.t_project_member.findFirst
+        .mockResolvedValueOnce({ role: 'member' })
+        .mockResolvedValueOnce(null);
+
+      prisma.t_task.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError(
+          'Serialization conflict',
+          {
+            code: 'P2034',
+            clientVersion: 'test',
+          },
+        ),
+      );
+
+      await expect(
+        service.create(E, ME, {
+          title: 'Task',
+          priority: 'Medium',
+        } as any),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+      expect(prisma.t_task.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('konflik berulang dihentikan setelah tiga percobaan', async () => {
+      prisma.t_task.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError(
+          'Serialization conflict',
+          {
+            code: 'P2034',
+            clientVersion: 'test',
+          },
+        ),
+      );
+
+      await expect(
+        service.create(E, ME, {
+          title: 'Task',
+          priority: 'Medium',
+        } as any),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(3);
+    });
+  });
+    describe('filter mentioned', () => {
+    it('mentioned=me memakai ID user yang sedang login', async () => {
+      prisma.t_task.findMany.mockResolvedValue([]);
+
+      await service.findAllByProject(P, ME, {
+        mentioned: 'me',
+      });
+
+      expect(prisma.t_task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            epic: { project_id: P },
+            mentions: {
+              some: { user_id: ME },
+            },
+          },
+        }),
+      );
+    });
+
+    it('mentioned=user ID memfilter penerima mention tersebut', async () => {
+      prisma.t_task.findMany.mockResolvedValue([]);
+
+      await service.findAllByProject(P, ME, {
+        mentioned: OTHER,
+      });
+
+      expect(prisma.t_task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            epic: { project_id: P },
+            mentions: {
+              some: { user_id: OTHER },
+            },
+          },
+        }),
+      );
+    });
+
+    it('filter mention digabung dengan status dan assignee dalam project', async () => {
+      prisma.t_task.findMany.mockResolvedValue([]);
+
+      await service.findAllByProject(P, ME, {
+        mentioned: 'me',
+        assignee: OTHER,
+        status: S,
+      });
+
+      expect(prisma.t_task.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            epic: { project_id: P },
+            status_id: S,
+            assignees: {
+              some: { user_id: OTHER },
+            },
+            mentions: {
+              some: { user_id: ME },
+            },
+          },
+        }),
+      );
     });
   });
 });
